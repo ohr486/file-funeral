@@ -1,3 +1,5 @@
 source 'https://rubygems.org'
 
 gem 'webview_ruby'
+gem 'thin'
+gem 'faye-websocket'
