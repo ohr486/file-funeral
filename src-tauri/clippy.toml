@@ -1,0 +1,11 @@
+# Clippy設定
+# https://doc.rust-lang.org/clippy/lint_configuration.html
+
+# 複雑度の閾値
+cognitive-complexity-threshold = 30
+
+# ドキュメントコメントの最小行数
+doc-valid-idents = ["file-funeral", "S3", "AWS", "GCS"]
+
+# その他の設定
+avoid-breaking-exported-api = true
