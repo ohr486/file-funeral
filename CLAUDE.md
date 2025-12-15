@@ -224,8 +224,9 @@ npm run format
 
 ## Git ワークフロー
 
-- メインブランチ: `main`
-- 開発にはフィーチャーブランチを使用
+- デフォルトブランチ: `develop`
+- メインブランチ: `main` (リリース用)
+- 開発にはフィーチャーブランチを使用 (`feature/*` から `develop` へマージ)
 - Conventional Commitsに従う
 - クリーンな履歴を維持
 
