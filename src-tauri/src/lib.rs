@@ -14,3 +14,19 @@ pub fn run() {
     .run(tauri::generate_context!())
     .expect("error while running tauri application");
 }
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn test_basic() {
+        // 基本的なテストの例
+        assert_eq!(2 + 2, 4);
+    }
+
+    #[test]
+    fn test_app_name() {
+        // アプリケーション名の確認
+        let app_name = env!("CARGO_PKG_NAME");
+        assert_eq!(app_name, "app");
+    }
+}
