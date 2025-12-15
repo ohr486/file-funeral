@@ -25,9 +25,9 @@ file-funeralは、ローカルファイルをクラウドストレージにバ�
 - **Tauriプラグイン**: tauri-plugin-fs（ファイルシステムアクセス）
 
 ### フロントエンド
-- **ビルドツール**: Vite
-- **フレームワーク**: React / Vue / Svelte（未決定）
-- **言語**: TypeScript
+- **ビルドツール**: Vite 7
+- **フレームワーク**: React 19
+- **言語**: TypeScript 5.9
 
 ### 認証情報管理
 - **keyring** クレート（OS標準キーチェーン）

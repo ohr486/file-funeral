@@ -30,9 +30,9 @@ file-funeralは、ローカルストレージとクラウドプロバイダー�
 - **認証情報ストレージ**: `keyring` クレート（OSキーチェーン）
 
 ### フロントエンド
-- **ビルドツール**: Vite
-- **フレームワーク**: React / Vue / Svelte（未決定）
-- **言語**: TypeScript
+- **ビルドツール**: Vite 7
+- **フレームワーク**: React 19
+- **言語**: TypeScript 5.9
 
 ### 主要な依存関係
 ```toml
@@ -117,26 +117,46 @@ cargo install tauri-cli
 
 # フロントエンド依存関係のインストール
 cd file-funeral
-npm install  # または pnpm/yarn
+npm install
 ```
 
 ### 開発
 ```bash
 # 開発モードで実行
-npm run tauri dev
+npm run tauri:dev
 
 # 本番ビルド
-npm run tauri build
+npm run tauri:build
 ```
 
 ### テスト
 ```bash
-# Rustテストの実行
-cd src-tauri
-cargo test
-
-# フロントエンドテストの実行
+# すべてのテストを実行
 npm test
+
+# Rustテストのみ
+npm run test:rust
+
+# 詳細出力付き
+npm run test:rust:verbose
+```
+
+### Lint
+```bash
+# すべてのlintを実行
+npm run lint
+
+# Rustのみ（clippy）
+npm run lint:rs
+
+# TypeScriptのみ（ESLint）
+npm run lint:ts
+
+# 自動修正
+npm run lint:fix
+
+# フォーマット
+npm run format
 ```
 
 ---
@@ -180,34 +200,25 @@ npm test
 
 ## 開発ロードマップ
 
-### v1.0 (MVP) - AWS S3のみ
-- [x] 要件定義完了
-- [ ] プロジェクトセットアップ（Tauri + フロントエンド）
-- [ ] Storage trait + S3実装
-- [ ] 基本的な同期エンジン
-- [ ] 同期状態付きファイルリストUI
-- [ ] 認証情報管理（キーチェーン）
-- [ ] 初回セットアップウィザード
+**詳細な実装タスク一覧**: `TODO.md` を参照してください。
 
-### v1.5 - 除外パターン機能
-- [ ] .gitignore方式の除外ルール
-- [ ] 除外設定UI
+### バージョン計画
 
-### v2.0 - S3互換対応 + ソフト削除
-- [ ] S3互換プロバイダーサポート
-- [ ] マルチプロバイダー選択UI
-- [ ] 複数フォルダ選択機能
-- [ ] ソフト削除（ゴミ箱機能）
+- **v1.0 (MVP)**: AWS S3対応、基本的な双方向同期機能
+- **v1.5**: 除外パターン機能（.gitignore方式）
+- **v2.0**: S3互換対応、複数フォルダ選択、ソフト削除
+- **v2.5**: Google Cloud Storage対応
+- **v3.0**: Azure Blob Storage、クライアントサイド暗号化、高度な機能
 
-### v2.5 - Google Cloud Storage対応
-- [ ] GCSプロバイダー実装
-- [ ] Google認証フロー
+### 現在の進捗状況
 
-### v3.0 - 高度な機能
-- [ ] Azure Blob Storage対応
-- [ ] クライアントサイド暗号化
-- [ ] アプリロック機能
-- [ ] シンボリックリンク対応
+**フェーズ0: プロジェクトセットアップ** ✅ 完了
+- ✅ Tauri v2 + React + TypeScript 環境構築
+- ✅ テストインフラ構築（cargo test）
+- ✅ Lintインフラ構築（clippy, ESLint）
+- ✅ 開発サーバー動作確認
+
+**次のステップ**: `TODO.md` のフェーズ1（バックエンド基盤）を参照
 
 ---
 
@@ -223,6 +234,7 @@ npm test
 ## リソース
 
 - **要件定義**: `REQUIREMENTS.md`
+- **実装タスク一覧**: `TODO.md`
 - **Tauriドキュメント**: https://v2.tauri.app/
 - **AWS SDK for Rust**: https://github.com/awslabs/aws-sdk-rust
 - **File Systemプラグイン**: https://v2.tauri.app/plugin/file-system
