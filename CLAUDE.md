@@ -1,40 +1,40 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+このファイルは、Claude Code (claude.ai/code) がこのリポジトリで作業する際のガイドを提供します。
 
-## Project Overview
+## プロジェクト概要
 
-file-funeral is a cloud-native file synchronization desktop application that enables users to backup and sync files between local storage and cloud providers. The primary use case is file sharing across multiple PCs with bidirectional synchronization.
+file-funeralは、ローカルストレージとクラウドプロバイダー間でファイルをバックアップ・同期するクラウドネイティブなデスクトップアプリケーションです。主な用途は、複数PC間での双方向ファイル同期によるファイル共有です。
 
-**Key Features:**
-- Upload/backup local files to cloud storage (AWS S3, GCS, S3-compatible)
-- Download files from cloud to local
-- Bidirectional synchronization between local and cloud
-- Visual file list with sync status indicators
-- Conflict resolution using "both save" strategy (Dropbox-style)
+**主要機能:**
+- ローカルファイルをクラウドストレージ（AWS S3、GCS、S3互換）にアップロード/バックアップ
+- クラウドからローカルへのファイルダウンロード
+- ローカルとクラウド間の双方向同期
+- 同期状態インジケーター付きファイルリストの視覚的表示
+- 「両方保存」方式による競合解決（Dropboxスタイル）
 
-**Full Requirements**: See `REQUIREMENTS.md` for detailed specifications.
+**詳細な要件**: `REQUIREMENTS.md` を参照してください。
 
 ---
 
-## Technology Stack
+## 技術スタック
 
-### Backend
-- **Framework**: Tauri v2
-- **Language**: Rust
-- **Async Runtime**: Tokio
-- **Cloud SDK**:
+### バックエンド
+- **フレームワーク**: Tauri v2
+- **言語**: Rust
+- **非同期ランタイム**: Tokio
+- **クラウドSDK**:
   - v1.0: `aws-sdk-s3`
-  - v2.0+: S3-compatible, GCS SDK
-- **Plugins**: `tauri-plugin-fs` (file system access)
-- **Credential Storage**: `keyring` crate (OS keychain)
+  - v2.0以降: S3互換、GCS SDK
+- **プラグイン**: `tauri-plugin-fs`（ファイルシステムアクセス）
+- **認証情報ストレージ**: `keyring` クレート（OSキーチェーン）
 
-### Frontend
-- **Build Tool**: Vite
-- **Framework**: React / Vue / Svelte (TBD)
-- **Language**: TypeScript
+### フロントエンド
+- **ビルドツール**: Vite
+- **フレームワーク**: React / Vue / Svelte（未決定）
+- **言語**: TypeScript
 
-### Key Dependencies
+### 主要な依存関係
 ```toml
 [dependencies]
 tauri = "2.x"
@@ -47,33 +47,33 @@ keyring = "*"
 
 ---
 
-## Project Structure
+## プロジェクト構造
 
-Expected directory layout:
+想定されるディレクトリ構成:
 ```
 file-funeral/
-├── src-tauri/           # Rust backend
+├── src-tauri/           # Rustバックエンド
 │   ├── src/
 │   │   ├── main.rs
-│   │   ├── storage/     # Cloud storage abstraction
-│   │   │   ├── mod.rs   # Storage trait definition
-│   │   │   ├── s3.rs    # AWS S3 implementation
-│   │   │   └── ...      # Future: GCS, S3-compatible
-│   │   ├── sync/        # Sync engine
+│   │   ├── storage/     # クラウドストレージ抽象化層
+│   │   │   ├── mod.rs   # Storage trait定義
+│   │   │   ├── s3.rs    # AWS S3実装
+│   │   │   └── ...      # 将来: GCS、S3互換
+│   │   ├── sync/        # 同期エンジン
 │   │   └── ...
 │   └── Cargo.toml
-├── src/                 # Frontend (React/Vue/Svelte)
-├── REQUIREMENTS.md      # Detailed requirements
-└── CLAUDE.md           # This file
+├── src/                 # フロントエンド（React/Vue/Svelte）
+├── REQUIREMENTS.md      # 詳細要件定義書
+└── CLAUDE.md           # このファイル
 ```
 
 ---
 
-## Architecture
+## アーキテクチャ
 
-### Storage Abstraction Layer
+### ストレージ抽象化レイヤー
 
-The app uses a trait-based abstraction for cloud storage providers:
+アプリはクラウドストレージプロバイダーのためのトレイトベースの抽象化を使用します:
 
 ```rust
 trait CloudStorageProvider {
@@ -85,144 +85,144 @@ trait CloudStorageProvider {
 }
 ```
 
-**Implementations:**
+**実装:**
 - v1.0: `S3Provider` (AWS S3)
-- v2.0: `S3CompatibleProvider` (MinIO, Backblaze B2, etc.)
+- v2.0: `S3CompatibleProvider` (MinIO、Backblaze B2等)
 - v2.5: `GCSProvider` (Google Cloud Storage)
 
-### Sync Engine
+### 同期エンジン
 
-**Sync Timing:**
-- On app startup (automatic)
-- When user clicks "Sync" button (manual)
-- (Optional) On app exit
+**同期タイミング:**
+- アプリ起動時（自動）
+- ユーザーが「同期」ボタンをクリックしたとき（手動）
+- （オプション）アプリ終了時
 
-**Conflict Resolution:**
-- Both files are saved when conflict detected
-- Cloud version: `filename.txt`
-- Local version: `filename (PCName's conflicted copy YYYY-MM-DD).txt`
+**競合解決:**
+- 競合検知時、両方のファイルを保存
+- クラウド版: `filename.txt`
+- ローカル版: `filename (PC名's conflicted copy YYYY-MM-DD).txt`
 
-**Deletion Handling:**
-- v1.0: Deletions are synced (full sync)
-- v2.0+: Soft delete with trash/restore functionality
+**削除の扱い:**
+- v1.0: 削除を同期（完全同期）
+- v2.0以降: ソフト削除（ゴミ箱/復元機能付き）
 
 ---
 
-## Development Commands
+## 開発コマンド
 
-### Setup
+### セットアップ
 ```bash
-# Install Tauri CLI
+# Tauri CLIのインストール
 cargo install tauri-cli
 
-# Install frontend dependencies
+# フロントエンド依存関係のインストール
 cd file-funeral
-npm install  # or pnpm/yarn
+npm install  # または pnpm/yarn
 ```
 
-### Development
+### 開発
 ```bash
-# Run in development mode
+# 開発モードで実行
 npm run tauri dev
 
-# Build for production
+# 本番ビルド
 npm run tauri build
 ```
 
-### Testing
+### テスト
 ```bash
-# Run Rust tests
+# Rustテストの実行
 cd src-tauri
 cargo test
 
-# Run frontend tests
+# フロントエンドテストの実行
 npm test
 ```
 
 ---
 
-## Key Implementation Guidelines
+## 重要な実装ガイドライン
 
-### 1. File Synchronization
-- Always use async operations with Tokio
-- Implement proper error handling for network failures
-- Use MD5/ETag for file integrity checks
-- Preserve folder structure using S3 keys with full paths
+### 1. ファイル同期
+- 常にTokioで非同期操作を使用する
+- ネットワーク障害に対する適切なエラーハンドリングを実装
+- ファイル整合性チェックにMD5/ETagを使用
+- フルパスを持つS3キーを使用してフォルダ構造を保持
 
-### 2. Security
-- **Never** store credentials in plain text
-- Use OS keychain via `keyring` crate:
+### 2. セキュリティ
+- 認証情報を**絶対に**平文で保存しない
+- `keyring`クレートを使用してOSキーチェーンを利用:
   - macOS: Keychain
   - Windows: Credential Manager
   - Linux: Secret Service API
-- Support environment variables for development (`AWS_ACCESS_KEY_ID`, etc.)
-- Enable S3 server-side encryption (SSE-S3) for all uploads
+- 開発用に環境変数（`AWS_ACCESS_KEY_ID`等）をサポート
+- すべてのアップロードでS3サーバーサイド暗号化（SSE-S3）を有効化
 
-### 3. File Management
-- **Preserved metadata**: filename, size, modified time, hash
-- **Ignored metadata**: permissions, creation time, owner
-- **Default exclusions**: `.DS_Store`, `Thumbs.db`, `*.tmp`, `*.swp`
-- **Special files**: Skip symlinks, hard links (warn user)
-- **Size limit**: 5GB max (v1.0), show progress bar for files >100MB
+### 3. ファイル管理
+- **保持するメタデータ**: ファイル名、サイズ、更新日時、ハッシュ値
+- **無視するメタデータ**: パーミッション、作成日時、所有者
+- **デフォルト除外**: `.DS_Store`、`Thumbs.db`、`*.tmp`、`*.swp`
+- **特殊ファイル**: シンボリックリンク、ハードリンクはスキップ（警告表示）
+- **サイズ制限**: 最大5GB（v1.0）、100MB以上のファイルはプログレスバー表示
 
-### 4. Error Handling
-- Display user-friendly error messages
-- Log detailed errors for troubleshooting
-- Handle network timeouts and retries gracefully
-- Never silently fail sync operations
+### 4. エラーハンドリング
+- ユーザーフレンドリーなエラーメッセージを表示
+- トラブルシューティング用の詳細なエラーログを記録
+- ネットワークタイムアウトとリトライを適切に処理
+- 同期操作を黙って失敗させない
 
-### 5. Cross-Platform Considerations
-- Use Tauri's path APIs for cross-platform path handling
-- Test on Windows, macOS, and Linux
-- Handle platform-specific hidden files appropriately
-
----
-
-## Development Roadmap
-
-### v1.0 (MVP) - AWS S3 Only
-- [x] Requirements defined
-- [ ] Project setup (Tauri + frontend)
-- [ ] Storage trait + S3 implementation
-- [ ] Basic sync engine
-- [ ] File list UI with sync status
-- [ ] Credentials management (keychain)
-- [ ] Initial setup wizard
-
-### v1.5 - Exclusion Patterns
-- [ ] .gitignore-style exclusion rules
-- [ ] Exclusion settings UI
-
-### v2.0 - S3-Compatible + Soft Delete
-- [ ] S3-compatible provider support
-- [ ] Multi-provider selection UI
-- [ ] Multiple folder selection
-- [ ] Soft delete with trash
-
-### v2.5 - Google Cloud Storage
-- [ ] GCS provider implementation
-- [ ] Google authentication flow
-
-### v3.0 - Advanced Features
-- [ ] Azure Blob Storage
-- [ ] Client-side encryption
-- [ ] App lock feature
-- [ ] Symlink support
+### 5. クロスプラットフォーム対応
+- クロスプラットフォームパス処理にTauriのpath APIを使用
+- Windows、macOS、Linuxでテスト
+- プラットフォーム固有の隠しファイルを適切に処理
 
 ---
 
-## Git Workflow
+## 開発ロードマップ
 
-- Main branch: `main`
-- Use feature branches for development
-- Follow conventional commits
-- Repository maintains clean history
+### v1.0 (MVP) - AWS S3のみ
+- [x] 要件定義完了
+- [ ] プロジェクトセットアップ（Tauri + フロントエンド）
+- [ ] Storage trait + S3実装
+- [ ] 基本的な同期エンジン
+- [ ] 同期状態付きファイルリストUI
+- [ ] 認証情報管理（キーチェーン）
+- [ ] 初回セットアップウィザード
+
+### v1.5 - 除外パターン機能
+- [ ] .gitignore方式の除外ルール
+- [ ] 除外設定UI
+
+### v2.0 - S3互換対応 + ソフト削除
+- [ ] S3互換プロバイダーサポート
+- [ ] マルチプロバイダー選択UI
+- [ ] 複数フォルダ選択機能
+- [ ] ソフト削除（ゴミ箱機能）
+
+### v2.5 - Google Cloud Storage対応
+- [ ] GCSプロバイダー実装
+- [ ] Google認証フロー
+
+### v3.0 - 高度な機能
+- [ ] Azure Blob Storage対応
+- [ ] クライアントサイド暗号化
+- [ ] アプリロック機能
+- [ ] シンボリックリンク対応
 
 ---
 
-## Resources
+## Git ワークフロー
 
-- **Requirements**: `REQUIREMENTS.md`
-- **Tauri Docs**: https://v2.tauri.app/
+- メインブランチ: `main`
+- 開発にはフィーチャーブランチを使用
+- Conventional Commitsに従う
+- クリーンな履歴を維持
+
+---
+
+## リソース
+
+- **要件定義**: `REQUIREMENTS.md`
+- **Tauriドキュメント**: https://v2.tauri.app/
 - **AWS SDK for Rust**: https://github.com/awslabs/aws-sdk-rust
-- **File System Plugin**: https://v2.tauri.app/plugin/file-system
+- **File Systemプラグイン**: https://v2.tauri.app/plugin/file-system
