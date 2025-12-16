@@ -40,17 +40,17 @@
 ## フェーズ1: バックエンド基盤 (v1.0 MVP)
 
 ### 1.1 依存関係の追加
-- ⬜ AWS SDK依存関係追加
-  - ⬜ `aws-config`
-  - ⬜ `aws-sdk-s3`
-  - ⬜ `tokio`（full features）
-- ⬜ セキュリティ関連
-  - ⬜ `keyring`（認証情報管理）
-  - ⬜ `serde`, `serde_json`（設定ファイル）
-- ⬜ ユーティリティ
-  - ⬜ `anyhow`（エラーハンドリング）
-  - ⬜ `thiserror`（カスタムエラー型）
-  - ⬜ `chrono`（日時処理）
+- ✅ AWS SDK依存関係追加
+  - ✅ `aws-config`
+  - ✅ `aws-sdk-s3`
+  - ✅ `tokio`（full features）
+- ✅ セキュリティ関連
+  - ✅ `keyring`（認証情報管理）
+  - ✅ `serde`, `serde_json`（設定ファイル）
+- ✅ ユーティリティ
+  - ✅ `anyhow`（エラーハンドリング）
+  - ✅ `thiserror`（カスタムエラー型）
+  - ✅ `chrono`（日時処理）
 
 ### 1.2 Storage抽象化層の実装
 - ⬜ `src-tauri/src/storage/mod.rs`作成
