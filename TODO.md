@@ -53,14 +53,14 @@
   - ✅ `chrono`（日時処理）
 
 ### 1.2 Storage抽象化層の実装
-- ⬜ `src-tauri/src/storage/mod.rs`作成
-  - ⬜ `CloudStorageProvider` trait定義
-  - ⬜ `FileInfo`構造体定義
-  - ⬜ `FileMetadata`構造体定義
-  - ⬜ カスタムエラー型定義
-- ⬜ ユニットテスト作成
-  - ⬜ Trait定義のテスト
-  - ⬜ 構造体のテスト
+- ✅ `src-tauri/src/storage/mod.rs`作成
+  - ✅ `CloudStorageProvider` trait定義
+  - ✅ `FileInfo`構造体定義
+  - ✅ `FileMetadata`構造体定義
+  - ✅ カスタムエラー型定義
+- ✅ ユニットテスト作成
+  - ✅ Trait定義のテスト
+  - ✅ 構造体のテスト
 
 ### 1.3 S3Provider実装
 - ⬜ `src-tauri/src/storage/s3.rs`作成
