@@ -2,6 +2,8 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+pub mod s3;
+
 /// カスタムエラー型
 #[derive(Error, Debug)]
 pub enum StorageError {

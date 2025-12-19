@@ -33,72 +33,52 @@ mod tests {
         assert_eq!(app_name, "app");
     }
 
-    // 依存関係のインポートテスト（フェーズ1.1）
-    #[test]
-    fn test_aws_sdk_imports() {
-        // AWS SDK のインポート確認（コンパイル時にチェック）
-        use aws_config;
+    // 依存関係の実用的なテスト（フェーズ1.1）
 
-        // 型が正しくインポートできることを確認
-        let _config_builder = aws_config::BehaviorVersion::latest();
-        assert!(true);
+    #[tokio::test]
+    async fn test_tokio_async_operations() {
+        // Tokioの非同期処理が正しく動作することを確認
+        use tokio::time::{sleep, Duration};
+
+        let start = std::time::Instant::now();
+        sleep(Duration::from_millis(10)).await;
+        let elapsed = start.elapsed();
+
+        assert!(elapsed >= Duration::from_millis(10));
     }
 
     #[test]
-    fn test_tokio_runtime() {
-        // Tokio ランタイムが動作することを確認
-        let runtime = tokio::runtime::Runtime::new().unwrap();
-        runtime.block_on(async {
-            assert_eq!(2 + 2, 4);
-        });
-    }
+    fn test_anyhow_error_propagation() {
+        // anyhow のエラー伝播とコンテキスト追加を確認
+        use anyhow::{anyhow, Context, Result};
 
-    #[test]
-    fn test_anyhow_error() {
-        // anyhow のエラーハンドリング確認
-        use anyhow::{Result, Context};
-
-        fn test_function() -> Result<i32> {
-            Ok(42)
+        fn inner_function() -> Result<()> {
+            Err(anyhow!("inner error"))
         }
 
-        let result = test_function().context("test context");
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap(), 42);
-    }
-
-    #[test]
-    fn test_thiserror() {
-        // thiserror のカスタムエラー型確認
-        use thiserror::Error;
-
-        #[derive(Error, Debug)]
-        enum TestError {
-            #[error("test error: {0}")]
-            Test(String),
+        fn outer_function() -> Result<()> {
+            inner_function().context("outer context")?;
+            Ok(())
         }
 
-        let err = TestError::Test("example".to_string());
-        assert_eq!(err.to_string(), "test error: example");
+        let result = outer_function();
+        assert!(result.is_err());
+        let err_msg = format!("{:#}", result.unwrap_err());
+        assert!(err_msg.contains("outer context"));
+        assert!(err_msg.contains("inner error"));
     }
 
     #[test]
-    fn test_chrono() {
-        // chrono の日時処理確認
-        use chrono::{Utc, DateTime};
+    fn test_chrono_datetime_parsing() {
+        // chrono の日時パース機能を確認
+        use chrono::{DateTime, TimeZone, Utc};
 
-        let now: DateTime<Utc> = Utc::now();
-        assert!(now.timestamp() > 0);
-    }
+        let dt_str = "2025-12-19T10:30:45Z";
+        let parsed = DateTime::parse_from_rfc3339(dt_str);
+        assert!(parsed.is_ok());
 
-    #[test]
-    fn test_keyring() {
-        // keyring のインポート確認（実際の操作はスキップ）
-        use keyring::Entry;
-
-        // キーリングエントリーの型が利用可能であることを確認
-        let _entry_type = std::marker::PhantomData::<Entry>;
-        assert!(true);
+        let expected = Utc.with_ymd_and_hms(2025, 12, 19, 10, 30, 45).unwrap();
+        assert_eq!(parsed.unwrap().with_timezone(&Utc), expected);
     }
 
     #[test]
