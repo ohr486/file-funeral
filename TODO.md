@@ -95,14 +95,14 @@
 ## フェーズ2: フロントエンド基盤 (v1.0 MVP)
 
 ### 2.1 UIライブラリセットアップ
-- ⬜ Tailwind CSSインストール
-- ⬜ shadcn/ui初期化
-- ⬜ 基本コンポーネント追加
-  - ⬜ Button
-  - ⬜ Table
-  - ⬜ Progress
-  - ⬜ Dialog
-  - ⬜ Toast（通知）
+- ✅ Tailwind CSSインストール
+- ✅ shadcn/ui初期化
+- ✅ 基本コンポーネント追加
+  - ✅ Button
+  - ✅ Table
+  - ✅ Progress
+  - ✅ Dialog
+  - ✅ Toast（通知）
 
 ### 2.2 Tauri Commands実装
 - ⬜ `src-tauri/src/commands.rs`作成
