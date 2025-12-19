@@ -115,18 +115,18 @@
 - ✅ テスト作成
 
 ### 2.3 メイン画面UI
-- ⬜ `src/components/FileList.tsx`作成
-  - ⬜ ファイルリスト表示
-  - ⬜ 同期状態アイコン表示
-  - ⬜ ソート機能
-  - ⬜ フィルター機能
-- ⬜ `src/components/SyncButton.tsx`作成
-  - ⬜ 同期ボタン
-  - ⬜ プログレスバー
-  - ⬜ 同期中の状態表示
-- ⬜ `src/pages/MainPage.tsx`作成
-  - ⬜ レイアウト構築
-  - ⬜ コンポーネント統合
+- ✅ `src/components/FileList.tsx`作成
+  - ✅ ファイルリスト表示
+  - ✅ 同期状態アイコン表示
+  - ✅ ソート機能
+  - ✅ フィルター機能
+- ✅ `src/components/SyncButton.tsx`作成
+  - ✅ 同期ボタン
+  - ✅ プログレスバー
+  - ✅ 同期中の状態表示
+- ✅ `src/pages/MainPage.tsx`作成
+  - ✅ レイアウト構築
+  - ✅ コンポーネント統合
 
 ### 2.4 設定画面UI
 - ⬜ `src/pages/SettingsPage.tsx`作成
