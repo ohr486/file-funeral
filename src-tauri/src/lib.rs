@@ -2,6 +2,7 @@
 pub mod storage;
 pub mod auth;
 pub mod sync;
+pub mod commands;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -16,6 +17,13 @@ pub fn run() {
       }
       Ok(())
     })
+    .invoke_handler(tauri::generate_handler![
+      commands::set_credentials,
+      commands::test_connection,
+      commands::list_files,
+      commands::get_sync_status,
+      commands::sync_files,
+    ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");
 }
