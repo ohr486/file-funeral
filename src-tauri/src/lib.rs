@@ -1,6 +1,7 @@
 // モジュール宣言
 pub mod storage;
 pub mod auth;
+pub mod sync;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
