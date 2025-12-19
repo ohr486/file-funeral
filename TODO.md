@@ -63,16 +63,16 @@
   - ✅ 構造体のテスト
 
 ### 1.3 S3Provider実装
-- ⬜ `src-tauri/src/storage/s3.rs`作成
-  - ⬜ `S3Provider`構造体定義
-  - ⬜ `upload`メソッド実装
-  - ⬜ `download`メソッド実装
-  - ⬜ `list`メソッド実装
-  - ⬜ `delete`メソッド実装
-  - ⬜ `get_metadata`メソッド実装
-- ⬜ エラーハンドリング実装
-- ⬜ ユニットテスト作成
-- ⬜ 統合テスト作成（モック使用）
+- ✅ `src-tauri/src/storage/s3.rs`作成
+  - ✅ `S3Provider`構造体定義
+  - ✅ `upload`メソッド実装
+  - ✅ `download`メソッド実装
+  - ✅ `list`メソッド実装
+  - ✅ `delete`メソッド実装
+  - ✅ `get_metadata`メソッド実装
+- ✅ エラーハンドリング実装
+- ✅ ユニットテスト作成
+- ✅ 統合テスト作成（モック使用）
 
 ### 1.4 認証情報管理
 - ⬜ `src-tauri/src/auth/mod.rs`作成
