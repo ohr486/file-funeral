@@ -105,14 +105,14 @@
   - ✅ Toast（通知）
 
 ### 2.2 Tauri Commands実装
-- ⬜ `src-tauri/src/commands.rs`作成
-  - ⬜ `sync_files`コマンド
-  - ⬜ `list_files`コマンド
-  - ⬜ `get_sync_status`コマンド
-  - ⬜ `set_credentials`コマンド
-  - ⬜ `test_connection`コマンド
-- ⬜ エラーハンドリング
-- ⬜ テスト作成
+- ✅ `src-tauri/src/commands.rs`作成
+  - ✅ `sync_files`コマンド
+  - ✅ `list_files`コマンド
+  - ✅ `get_sync_status`コマンド
+  - ✅ `set_credentials`コマンド
+  - ✅ `test_connection`コマンド
+- ✅ エラーハンドリング
+- ✅ テスト作成
 
 ### 2.3 メイン画面UI
 - ⬜ `src/components/FileList.tsx`作成
