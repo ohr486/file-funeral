@@ -29,7 +29,10 @@ async fn test_s3_provider_creation() {
         }
         Err(e) => {
             // 認証情報が見つからない場合のエラーは許容
-            eprintln!("Expected error when AWS credentials are not configured: {}", e);
+            eprintln!(
+                "Expected error when AWS credentials are not configured: {}",
+                e
+            );
         }
     }
 }
@@ -113,11 +116,7 @@ async fn test_real_s3_upload() {
         .upload("test/integration_test.txt", test_data, metadata)
         .await;
 
-    assert!(
-        result.is_ok(),
-        "Upload should succeed: {:?}",
-        result.err()
-    );
+    assert!(result.is_ok(), "Upload should succeed: {:?}", result.err());
 }
 
 /// 実際のS3バケットからのダウンロードテスト
@@ -192,11 +191,7 @@ async fn test_real_s3_delete() {
     // 削除
     let result = provider.delete("test/delete_test.txt").await;
 
-    assert!(
-        result.is_ok(),
-        "Delete should succeed: {:?}",
-        result.err()
-    );
+    assert!(result.is_ok(), "Delete should succeed: {:?}", result.err());
 }
 
 /// 実際のS3バケットのメタデータ取得テスト

@@ -85,10 +85,12 @@ impl CredentialManager {
             PathBuf::from("/tmp").join(format!(".{}", service_name))
         } else {
             // Use home directory for production credentials
-            let home = std::env::var("HOME")
-                .map_err(|_| CredentialError::FileSystem(
-                    std::io::Error::new(std::io::ErrorKind::NotFound, "HOME directory not found")
-                ))?;
+            let home = std::env::var("HOME").map_err(|_| {
+                CredentialError::FileSystem(std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    "HOME directory not found",
+                ))
+            })?;
             PathBuf::from(home).join(format!(".{}", service_name))
         };
 
@@ -153,7 +155,10 @@ impl CredentialManager {
     ///
     /// In release mode, each credential component is stored separately in the keychain for security.
     /// The keys are named: "aws_access_key_id", "aws_secret_access_key", "aws_region", "s3_bucket_name"
-    pub fn save_aws_credentials(&self, credentials: &AwsCredentials) -> Result<(), CredentialError> {
+    pub fn save_aws_credentials(
+        &self,
+        credentials: &AwsCredentials,
+    ) -> Result<(), CredentialError> {
         #[cfg(debug_assertions)]
         {
             log::info!("Development mode: using file-based credential storage");
@@ -193,7 +198,10 @@ impl CredentialManager {
             match self.load_from_file() {
                 Ok(credentials) => return Ok(credentials),
                 Err(e) => {
-                    log::warn!("Failed to load from file: {}, trying environment variables", e);
+                    log::warn!(
+                        "Failed to load from file: {}, trying environment variables",
+                        e
+                    );
                 }
             }
         }
@@ -204,11 +212,15 @@ impl CredentialManager {
         }
 
         // Fall back to keychain/environment variables
-        let access_key_id = self.get_credential_with_env_fallback("aws_access_key_id", "AWS_ACCESS_KEY_ID")?;
-        let secret_access_key = self.get_credential_with_env_fallback("aws_secret_access_key", "AWS_SECRET_ACCESS_KEY")?;
-        let region = self.get_credential_with_env_fallback("aws_region", "AWS_REGION")
+        let access_key_id =
+            self.get_credential_with_env_fallback("aws_access_key_id", "AWS_ACCESS_KEY_ID")?;
+        let secret_access_key = self
+            .get_credential_with_env_fallback("aws_secret_access_key", "AWS_SECRET_ACCESS_KEY")?;
+        let region = self
+            .get_credential_with_env_fallback("aws_region", "AWS_REGION")
             .unwrap_or_else(|_| "us-east-1".to_string());
-        let bucket_name = self.get_credential_with_env_fallback("s3_bucket_name", "S3_BUCKET_NAME")?;
+        let bucket_name =
+            self.get_credential_with_env_fallback("s3_bucket_name", "S3_BUCKET_NAME")?;
 
         Ok(AwsCredentials {
             access_key_id,
@@ -257,7 +269,11 @@ impl CredentialManager {
     /// Set a credential in the OS keychain
     #[allow(dead_code)]
     fn set_credential(&self, key: &str, value: &str) -> Result<(), CredentialError> {
-        log::info!("Setting credential in keychain: service={}, key={}", self.service_name, key);
+        log::info!(
+            "Setting credential in keychain: service={}, key={}",
+            self.service_name,
+            key
+        );
         let entry = Entry::new(&self.service_name, key)?;
         entry.set_password(value)?;
         log::info!("Credential set successfully: key={}", key);
@@ -267,7 +283,11 @@ impl CredentialManager {
     /// Get a credential from the OS keychain
     #[allow(dead_code)]
     fn get_credential(&self, key: &str) -> Result<String, CredentialError> {
-        log::info!("Getting credential from keychain: service={}, key={}", self.service_name, key);
+        log::info!(
+            "Getting credential from keychain: service={}, key={}",
+            self.service_name,
+            key
+        );
         let entry = Entry::new(&self.service_name, key)?;
         match entry.get_password() {
             Ok(password) => {
@@ -286,7 +306,11 @@ impl CredentialManager {
     }
 
     /// Get a credential from the OS keychain, with fallback to environment variable
-    fn get_credential_with_env_fallback(&self, key: &str, env_var: &str) -> Result<String, CredentialError> {
+    fn get_credential_with_env_fallback(
+        &self,
+        key: &str,
+        env_var: &str,
+    ) -> Result<String, CredentialError> {
         // First try keychain
         match self.get_credential(key) {
             Ok(value) => {
@@ -294,7 +318,11 @@ impl CredentialManager {
                 Ok(value)
             }
             Err(CredentialError::NotFound(_)) => {
-                log::info!("Keychain value not found for key={}, falling back to env var {}", key, env_var);
+                log::info!(
+                    "Keychain value not found for key={}, falling back to env var {}",
+                    key,
+                    env_var
+                );
                 // Fall back to environment variable
                 match std::env::var(env_var) {
                     Ok(value) => {
@@ -436,7 +464,9 @@ mod tests {
         }
 
         // Delete
-        manager.delete_aws_credentials().expect("Failed to delete credentials");
+        manager
+            .delete_aws_credentials()
+            .expect("Failed to delete credentials");
 
         // Verify deletion (should fail since env vars are cleared)
         assert!(manager.load_aws_credentials().is_err());
@@ -495,7 +525,8 @@ mod tests {
                 assert_eq!(retrieved, test_value);
 
                 // Delete credential
-                manager.delete_credential(test_key)
+                manager
+                    .delete_credential(test_key)
                     .expect("Failed to delete credential");
 
                 // Verify deletion

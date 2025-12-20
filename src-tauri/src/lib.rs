@@ -1,32 +1,32 @@
 // モジュール宣言
-pub mod storage;
 pub mod auth;
-pub mod sync;
 pub mod commands;
+pub mod storage;
+pub mod sync;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-  tauri::Builder::default()
-    .setup(|app| {
-      if cfg!(debug_assertions) {
-        app.handle().plugin(
-          tauri_plugin_log::Builder::default()
-            .level(log::LevelFilter::Info)
-            .build(),
-        )?;
-      }
-      Ok(())
-    })
-    .invoke_handler(tauri::generate_handler![
-      commands::set_credentials,
-      commands::get_credentials,
-      commands::test_connection,
-      commands::list_files,
-      commands::get_sync_status,
-      commands::sync_files,
-    ])
-    .run(tauri::generate_context!())
-    .expect("error while running tauri application");
+    tauri::Builder::default()
+        .setup(|app| {
+            if cfg!(debug_assertions) {
+                app.handle().plugin(
+                    tauri_plugin_log::Builder::default()
+                        .level(log::LevelFilter::Info)
+                        .build(),
+                )?;
+            }
+            Ok(())
+        })
+        .invoke_handler(tauri::generate_handler![
+            commands::set_credentials,
+            commands::get_credentials,
+            commands::test_connection,
+            commands::list_files,
+            commands::get_sync_status,
+            commands::sync_files,
+        ])
+        .run(tauri::generate_context!())
+        .expect("error while running tauri application");
 }
 
 #[cfg(test)]
@@ -95,7 +95,7 @@ mod tests {
     #[test]
     fn test_serde() {
         // serde, serde_json の確認（既存の依存関係）
-        use serde::{Serialize, Deserialize};
+        use serde::{Deserialize, Serialize};
 
         #[derive(Serialize, Deserialize, Debug, PartialEq)]
         struct TestStruct {

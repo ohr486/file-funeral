@@ -161,9 +161,7 @@ impl From<ComparisonResult> for ComparisonResultDto {
 /// # Returns
 /// A response indicating success or failure
 #[tauri::command]
-pub async fn set_credentials(
-    request: SetCredentialsRequest,
-) -> CommandResult<CredentialsResponse> {
+pub async fn set_credentials(request: SetCredentialsRequest) -> CommandResult<CredentialsResponse> {
     log::info!("set_credentials called");
 
     // Validate input
@@ -247,13 +245,18 @@ pub async fn test_connection() -> CommandResult<ConnectionTestResponse> {
 
     let credentials = manager.load_aws_credentials().map_err(|e| {
         log::error!("Failed to load credentials: {}", e);
-        CommandError::NotConfigured("AWS credentials not found. Please set credentials first.".to_string())
+        CommandError::NotConfigured(
+            "AWS credentials not found. Please set credentials first.".to_string(),
+        )
     })?;
 
     log::info!("Credentials loaded successfully");
 
     // Test actual connection to S3
-    log::info!("Testing connection to S3 bucket: {}", credentials.bucket_name);
+    log::info!(
+        "Testing connection to S3 bucket: {}",
+        credentials.bucket_name
+    );
 
     // Create AWS config with behavior version
     let region = aws_sdk_s3::config::Region::new(credentials.region.clone());
@@ -274,13 +277,17 @@ pub async fn test_connection() -> CommandResult<ConnectionTestResponse> {
     let client = aws_sdk_s3::Client::new(&sdk_config);
 
     // Try to access the bucket (head_bucket is a lightweight operation)
-    match client.head_bucket()
+    match client
+        .head_bucket()
         .bucket(&credentials.bucket_name)
         .send()
         .await
     {
         Ok(_) => {
-            log::info!("Successfully connected to S3 bucket: {}", credentials.bucket_name);
+            log::info!(
+                "Successfully connected to S3 bucket: {}",
+                credentials.bucket_name
+            );
             Ok(ConnectionTestResponse {
                 connected: true,
                 message: format!(
@@ -357,7 +364,9 @@ pub async fn list_files(_request: ListFilesRequest) -> CommandResult<ListFilesRe
     // Load credentials
     let manager = CredentialManager::new();
     let _credentials = manager.load_aws_credentials().map_err(|_| {
-        CommandError::NotConfigured("AWS credentials not found. Please set credentials first.".to_string())
+        CommandError::NotConfigured(
+            "AWS credentials not found. Please set credentials first.".to_string(),
+        )
     })?;
 
     // TODO: Create S3Provider and list files
@@ -396,7 +405,9 @@ pub async fn get_sync_status(
     // Load credentials
     let manager = CredentialManager::new();
     let _credentials = manager.load_aws_credentials().map_err(|_| {
-        CommandError::NotConfigured("AWS credentials not found. Please set credentials first.".to_string())
+        CommandError::NotConfigured(
+            "AWS credentials not found. Please set credentials first.".to_string(),
+        )
     })?;
 
     // TODO: Implement actual sync status checking
@@ -438,7 +449,9 @@ pub async fn sync_files(request: SyncFilesRequest) -> CommandResult<SyncFilesRes
     // Load credentials
     let manager = CredentialManager::new();
     let _credentials = manager.load_aws_credentials().map_err(|_| {
-        CommandError::NotConfigured("AWS credentials not found. Please set credentials first.".to_string())
+        CommandError::NotConfigured(
+            "AWS credentials not found. Please set credentials first.".to_string(),
+        )
     })?;
 
     // TODO: Implement actual sync logic
@@ -482,7 +495,12 @@ mod tests {
         use chrono::Utc;
 
         let now = Utc::now();
-        let file_info = FileInfo::new("test.txt".to_string(), 100, now, Some("etag123".to_string()));
+        let file_info = FileInfo::new(
+            "test.txt".to_string(),
+            100,
+            now,
+            Some("etag123".to_string()),
+        );
 
         let comparison = ComparisonResult {
             path: "test.txt".to_string(),
@@ -592,7 +610,7 @@ mod tests {
 
         let test_cases = vec![
             ("", "secret", "region", "bucket", "Access key ID"),
-            ("access", "", "region", "bucket", "Secret access key"),  // Now fails because no existing credentials
+            ("access", "", "region", "bucket", "Secret access key"), // Now fails because no existing credentials
             ("access", "secret", "", "bucket", "Region"),
             ("access", "secret", "region", "", "Bucket name"),
         ];

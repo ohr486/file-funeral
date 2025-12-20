@@ -25,9 +25,7 @@ impl S3Provider {
     /// # エラー
     /// AWS認証情報の読み込みに失敗した場合はエラーを返す
     pub async fn new(bucket: String) -> Result<Self> {
-        let config = aws_config::defaults(BehaviorVersion::latest())
-            .load()
-            .await;
+        let config = aws_config::defaults(BehaviorVersion::latest()).load().await;
         let client = Client::new(&config);
 
         Ok(Self { client, bucket })
@@ -157,12 +155,7 @@ impl CloudStorageProvider for S3Provider {
                             .unwrap_or_else(Utc::now);
                         let etag = object.e_tag().map(|s| s.to_string());
 
-                        file_list.push(FileInfo::new(
-                            key.to_string(),
-                            size,
-                            last_modified,
-                            etag,
-                        ));
+                        file_list.push(FileInfo::new(key.to_string(), size, last_modified, etag));
                     }
                 }
             }
@@ -241,9 +234,7 @@ mod tests {
         // モック用の設定を作成（実際のAWS接続は不要）
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async {
-            let config = aws_config::defaults(BehaviorVersion::latest())
-                .load()
-                .await;
+            let config = aws_config::defaults(BehaviorVersion::latest()).load().await;
             let provider = S3Provider::with_config("test-bucket".to_string(), &config);
 
             assert_eq!(provider.bucket(), "test-bucket");
@@ -254,9 +245,7 @@ mod tests {
     fn test_s3_provider_bucket_name() {
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async {
-            let config = aws_config::defaults(BehaviorVersion::latest())
-                .load()
-                .await;
+            let config = aws_config::defaults(BehaviorVersion::latest()).load().await;
             let provider = S3Provider::with_config("my-storage-bucket".to_string(), &config);
 
             assert_eq!(provider.bucket(), "my-storage-bucket");
@@ -279,10 +268,7 @@ mod tests {
 
         assert_eq!(metadata.size, 1024);
         assert_eq!(metadata.last_modified, now);
-        assert_eq!(
-            metadata.content_type,
-            Some("application/pdf".to_string())
-        );
+        assert_eq!(metadata.content_type, Some("application/pdf".to_string()));
         assert_eq!(metadata.etag, Some("etag123".to_string()));
     }
 
@@ -310,7 +296,10 @@ mod tests {
     fn test_storage_error_display() {
         // NotFoundエラー
         let not_found = StorageError::NotFound("missing.txt".to_string());
-        assert_eq!(not_found.to_string(), "ファイルが見つかりません: missing.txt");
+        assert_eq!(
+            not_found.to_string(),
+            "ファイルが見つかりません: missing.txt"
+        );
 
         // Uploadエラー
         let upload_err = StorageError::Upload("Network error".to_string());
@@ -318,7 +307,10 @@ mod tests {
 
         // Downloadエラー
         let download_err = StorageError::Download("Connection lost".to_string());
-        assert_eq!(download_err.to_string(), "ダウンロードエラー: Connection lost");
+        assert_eq!(
+            download_err.to_string(),
+            "ダウンロードエラー: Connection lost"
+        );
     }
 
     #[test]
