@@ -31,6 +31,8 @@ describe("SettingsPage", () => {
   beforeEach(() => {
     mockInvoke.mockReset();
     mockOpen.mockReset();
+    // Clear localStorage before each test
+    localStorage.clear();
   });
 
   describe("Rendering", () => {

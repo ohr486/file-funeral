@@ -30,7 +30,7 @@ export function SettingsPage({ onBack, onSetupWizard }: SettingsPageProps) {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [credentialsSaved, setCredentialsSaved] = useState(false);
 
-  // Load existing credentials when component mounts
+  // Load existing credentials and settings when component mounts
   useEffect(() => {
     const loadCredentials = async () => {
       try {
@@ -49,7 +49,20 @@ export function SettingsPage({ onBack, onSetupWizard }: SettingsPageProps) {
       }
     };
 
+    const loadSettings = () => {
+      try {
+        // Load sync folder path from localStorage
+        const savedSyncFolder = localStorage.getItem("syncFolder");
+        if (savedSyncFolder) {
+          setSyncFolder(savedSyncFolder);
+        }
+      } catch (error) {
+        console.error("Failed to load settings:", error);
+      }
+    };
+
     loadCredentials();
+    loadSettings();
   }, []);
 
   const validateForm = (): boolean => {
@@ -88,7 +101,9 @@ export function SettingsPage({ onBack, onSetupWizard }: SettingsPageProps) {
 
       if (selected && typeof selected === "string") {
         setSyncFolder(selected);
-        toast.success("Folder selected", {
+        // Save to localStorage
+        localStorage.setItem("syncFolder", selected);
+        toast.success("Folder selected and saved", {
           description: selected,
         });
       }

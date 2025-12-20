@@ -5,7 +5,6 @@ import {
   Download,
   AlertTriangle,
   File,
-  FileQuestion,
   ArrowUpDown,
 } from "lucide-react";
 import {
@@ -31,16 +30,12 @@ const getSyncStateIcon = (state: SyncState) => {
   switch (state) {
     case SyncState.InSync:
       return <CheckCircle2 className="h-4 w-4 text-green-500" />;
-    case SyncState.LocalNewer:
+    case SyncState.NeedsUpload:
       return <Upload className="h-4 w-4 text-blue-500" />;
-    case SyncState.RemoteNewer:
+    case SyncState.NeedsDownload:
       return <Download className="h-4 w-4 text-blue-500" />;
     case SyncState.Conflict:
       return <AlertTriangle className="h-4 w-4 text-red-500" />;
-    case SyncState.LocalOnly:
-      return <File className="h-4 w-4 text-gray-500" />;
-    case SyncState.RemoteOnly:
-      return <FileQuestion className="h-4 w-4 text-gray-500" />;
     default:
       return <File className="h-4 w-4 text-gray-400" />;
   }
@@ -50,16 +45,12 @@ const getSyncStateBadge = (state: SyncState) => {
   switch (state) {
     case SyncState.InSync:
       return <Badge variant="default">In Sync</Badge>;
-    case SyncState.LocalNewer:
+    case SyncState.NeedsUpload:
       return <Badge variant="default">Needs Upload</Badge>;
-    case SyncState.RemoteNewer:
+    case SyncState.NeedsDownload:
       return <Badge variant="default">Needs Download</Badge>;
     case SyncState.Conflict:
       return <Badge variant="destructive">Conflict</Badge>;
-    case SyncState.LocalOnly:
-      return <Badge variant="secondary">Local Only</Badge>;
-    case SyncState.RemoteOnly:
-      return <Badge variant="secondary">Remote Only</Badge>;
     default:
       return <Badge variant="outline">Unknown</Badge>;
   }
@@ -165,11 +156,9 @@ export function FileList({ files }: FileListProps) {
         >
           <option value="all">All Files</option>
           <option value={SyncState.InSync}>In Sync</option>
-          <option value={SyncState.LocalNewer}>Needs Upload</option>
-          <option value={SyncState.RemoteNewer}>Needs Download</option>
+          <option value={SyncState.NeedsUpload}>Needs Upload</option>
+          <option value={SyncState.NeedsDownload}>Needs Download</option>
           <option value={SyncState.Conflict}>Conflict</option>
-          <option value={SyncState.LocalOnly}>Local Only</option>
-          <option value={SyncState.RemoteOnly}>Remote Only</option>
         </select>
       </div>
 

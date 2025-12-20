@@ -2,11 +2,9 @@
 
 export enum SyncState {
   InSync = "InSync",
-  LocalNewer = "LocalNewer",
-  RemoteNewer = "RemoteNewer",
+  NeedsUpload = "NeedsUpload",
+  NeedsDownload = "NeedsDownload",
   Conflict = "Conflict",
-  LocalOnly = "LocalOnly",
-  RemoteOnly = "RemoteOnly",
 }
 
 export interface FileInfo {

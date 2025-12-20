@@ -386,9 +386,16 @@ fn list_local_files(dir_path: &Path) -> CommandResult<Vec<FileInfo>> {
 }
 
 /// Recursively walk a directory and collect file information
-fn walk_directory(base_path: &Path, current_path: &Path, files: &mut Vec<FileInfo>) -> CommandResult<()> {
+fn walk_directory(
+    base_path: &Path,
+    current_path: &Path,
+    files: &mut Vec<FileInfo>,
+) -> CommandResult<()> {
     let entries = fs::read_dir(current_path).map_err(|e| {
-        CommandError::OperationFailed(format!("Failed to read directory {:?}: {}", current_path, e))
+        CommandError::OperationFailed(format!(
+            "Failed to read directory {:?}: {}",
+            current_path, e
+        ))
     })?;
 
     for entry in entries {
@@ -412,8 +419,9 @@ fn walk_directory(base_path: &Path, current_path: &Path, files: &mut Vec<FileInf
 
         if metadata.is_file() {
             // Get relative path from base
-            let relative_path = path.strip_prefix(base_path)
-                .map_err(|e| CommandError::OperationFailed(format!("Failed to get relative path: {}", e)))?;
+            let relative_path = path.strip_prefix(base_path).map_err(|e| {
+                CommandError::OperationFailed(format!("Failed to get relative path: {}", e))
+            })?;
 
             let path_str = relative_path.to_string_lossy().to_string();
 
@@ -445,13 +453,7 @@ fn walk_directory(base_path: &Path, current_path: &Path, files: &mut Vec<FileInf
 /// Check if a file should be skipped during sync
 fn should_skip_file(file_name: &str) -> bool {
     // Default exclusion patterns
-    let skip_patterns = [
-        ".DS_Store",
-        "Thumbs.db",
-        ".tmp",
-        ".swp",
-        "~",
-    ];
+    let skip_patterns = [".DS_Store", "Thumbs.db", ".tmp", ".swp", "~"];
 
     // Skip hidden files (starting with .)
     if file_name.starts_with('.') {
@@ -480,7 +482,10 @@ fn write_local_file(file_path: &Path, data: &[u8]) -> CommandResult<()> {
     // Create parent directories if they don't exist
     if let Some(parent) = file_path.parent() {
         fs::create_dir_all(parent).map_err(|e| {
-            CommandError::OperationFailed(format!("Failed to create directories {:?}: {}", parent, e))
+            CommandError::OperationFailed(format!(
+                "Failed to create directories {:?}: {}",
+                parent, e
+            ))
         })?;
     }
 
@@ -513,7 +518,10 @@ async fn create_s3_provider() -> CommandResult<S3Provider> {
         .load()
         .await;
 
-    Ok(S3Provider::with_config(credentials.bucket_name, &sdk_config))
+    Ok(S3Provider::with_config(
+        credentials.bucket_name,
+        &sdk_config,
+    ))
 }
 
 // ============================================================================
@@ -540,7 +548,11 @@ pub async fn list_files(request: ListFilesRequest) -> CommandResult<ListFilesRes
     // List files with the given prefix
     let files = provider.list(&request.prefix).await?;
 
-    log::info!("Found {} remote files with prefix '{}'", files.len(), request.prefix);
+    log::info!(
+        "Found {} remote files with prefix '{}'",
+        files.len(),
+        request.prefix
+    );
 
     Ok(ListFilesResponse {
         total_count: files.len(),
@@ -564,7 +576,11 @@ pub async fn get_sync_status(
     local_path: String,
     remote_prefix: String,
 ) -> CommandResult<SyncStatusResponse> {
-    log::info!("get_sync_status called: local={}, remote={}", local_path, remote_prefix);
+    log::info!(
+        "get_sync_status called: local={}, remote={}",
+        local_path,
+        remote_prefix
+    );
 
     // Validate input
     if local_path.is_empty() {
@@ -612,8 +628,8 @@ pub async fn get_sync_status(
         // Count by state
         match comparison.state {
             SyncState::InSync => in_sync_count += 1,
-            SyncState::LocalOnly | SyncState::LocalNewer => needs_upload_count += 1,
-            SyncState::RemoteOnly | SyncState::RemoteNewer => needs_download_count += 1,
+            SyncState::NeedsUpload => needs_upload_count += 1,
+            SyncState::NeedsDownload => needs_download_count += 1,
             SyncState::Conflict => conflict_count += 1,
         }
 
@@ -622,7 +638,10 @@ pub async fn get_sync_status(
 
     log::info!(
         "Sync status: in_sync={}, upload={}, download={}, conflict={}",
-        in_sync_count, needs_upload_count, needs_download_count, conflict_count
+        in_sync_count,
+        needs_upload_count,
+        needs_download_count,
+        conflict_count
     );
 
     Ok(SyncStatusResponse {
@@ -648,7 +667,11 @@ pub async fn get_sync_status(
 /// A summary of the sync operation
 #[tauri::command]
 pub async fn sync_files(request: SyncFilesRequest) -> CommandResult<SyncFilesResponse> {
-    log::info!("sync_files called: local={}, remote={}", request.local_path, request.remote_prefix);
+    log::info!(
+        "sync_files called: local={}, remote={}",
+        request.local_path,
+        request.remote_prefix
+    );
 
     // Validate input
     if request.local_path.is_empty() {
@@ -679,13 +702,8 @@ pub async fn sync_files(request: SyncFilesRequest) -> CommandResult<SyncFilesRes
     let mut errors = Vec::new();
 
     for comparison in status.comparisons {
-        let result = sync_single_file(
-            &comparison,
-            &local_dir,
-            &request.remote_prefix,
-            &provider,
-        )
-        .await;
+        let result =
+            sync_single_file(&comparison, &local_dir, &request.remote_prefix, &provider).await;
 
         match result {
             Ok(action) => {
@@ -754,7 +772,11 @@ async fn sync_single_file(
     let remote_path = if remote_prefix.is_empty() {
         comparison.path.clone()
     } else {
-        format!("{}/{}", remote_prefix.trim_end_matches('/'), comparison.path)
+        format!(
+            "{}/{}",
+            remote_prefix.trim_end_matches('/'),
+            comparison.path
+        )
     };
 
     match comparison.state {
@@ -763,7 +785,7 @@ async fn sync_single_file(
             Ok(SyncAction::Skipped)
         }
 
-        SyncState::LocalOnly | SyncState::LocalNewer => {
+        SyncState::NeedsUpload => {
             log::info!("Uploading file: {} -> {}", comparison.path, remote_path);
 
             // Read local file
@@ -784,7 +806,7 @@ async fn sync_single_file(
             Ok(SyncAction::Uploaded)
         }
 
-        SyncState::RemoteOnly | SyncState::RemoteNewer => {
+        SyncState::NeedsDownload => {
             log::info!("Downloading file: {} <- {}", comparison.path, remote_path);
 
             // Download from S3
@@ -824,17 +846,19 @@ async fn sync_single_file(
             let conflicted_remote_path = if remote_prefix.is_empty() {
                 resolution.conflicted_copy_path.clone()
             } else {
-                format!("{}/{}", remote_prefix.trim_end_matches('/'), resolution.conflicted_copy_path)
+                format!(
+                    "{}/{}",
+                    remote_prefix.trim_end_matches('/'),
+                    resolution.conflicted_copy_path
+                )
             };
 
-            let conflicted_metadata = FileMetadata::new(
-                local_data.len() as u64,
-                chrono::Utc::now(),
-                None,
-                None,
-            );
+            let conflicted_metadata =
+                FileMetadata::new(local_data.len() as u64, chrono::Utc::now(), None, None);
 
-            provider.upload(&conflicted_remote_path, &local_data, conflicted_metadata).await?;
+            provider
+                .upload(&conflicted_remote_path, &local_data, conflicted_metadata)
+                .await?;
 
             log::info!("Successfully resolved conflict for: {}", comparison.path);
             Ok(SyncAction::ConflictResolved)
@@ -875,14 +899,14 @@ mod tests {
 
         let comparison = ComparisonResult {
             path: "test.txt".to_string(),
-            state: SyncState::LocalOnly,
+            state: SyncState::NeedsUpload,
             local_info: Some(file_info),
             remote_info: None,
         };
 
         let dto: ComparisonResultDto = comparison.into();
         assert_eq!(dto.path, "test.txt");
-        assert_eq!(dto.state, SyncState::LocalOnly);
+        assert_eq!(dto.state, SyncState::NeedsUpload);
         assert_eq!(dto.local_size, Some(100));
         assert!(dto.remote_size.is_none());
     }
@@ -1142,7 +1166,11 @@ mod tests {
 
         // Create a temporary directory
         let temp_dir = TempDir::new().unwrap();
-        let file_path = temp_dir.path().join("subdir1").join("subdir2").join("test.txt");
+        let file_path = temp_dir
+            .path()
+            .join("subdir1")
+            .join("subdir2")
+            .join("test.txt");
 
         // Test data
         let test_data = b"Test content";
@@ -1204,8 +1232,10 @@ mod tests {
         let paths: Vec<String> = files.iter().map(|f| f.path.clone()).collect();
         assert!(paths.contains(&"file1.txt".to_string()));
         assert!(paths.contains(&"file2.txt".to_string()));
-        assert!(paths.contains(&"subdir/file3.txt".to_string()) ||
-                paths.contains(&"subdir\\file3.txt".to_string())); // Windows compatibility
+        assert!(
+            paths.contains(&"subdir/file3.txt".to_string())
+                || paths.contains(&"subdir\\file3.txt".to_string())
+        ); // Windows compatibility
     }
 
     #[test]
