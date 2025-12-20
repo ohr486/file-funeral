@@ -13,11 +13,12 @@ import { SetCredentialsRequest, CredentialsResponse, ConnectionTestResponse, Get
 
 interface SettingsPageProps {
   onBack?: () => void;
+  onSetupWizard?: () => void;
 }
 
 type TestStatus = "idle" | "testing" | "success" | "error";
 
-export function SettingsPage({ onBack }: SettingsPageProps) {
+export function SettingsPage({ onBack, onSetupWizard }: SettingsPageProps) {
   const [accessKeyId, setAccessKeyId] = useState("");
   const [secretAccessKey, setSecretAccessKey] = useState("");
   const [region, setRegion] = useState("us-east-1");
@@ -416,6 +417,23 @@ export function SettingsPage({ onBack }: SettingsPageProps) {
             </ol>
           </CardContent>
         </Card>
+
+        {/* Setup Wizard Section */}
+        {onSetupWizard && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Setup Wizard</CardTitle>
+              <CardDescription>
+                Run the guided setup wizard to configure your settings step by step
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Button onClick={onSetupWizard} variant="outline" className="w-full">
+                Run Setup Wizard
+              </Button>
+            </CardContent>
+          </Card>
+        )}
       </div>
     </div>
   );

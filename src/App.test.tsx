@@ -33,28 +33,37 @@ describe("App", () => {
     mockInvoke.mockReset();
     mockOpen.mockReset();
     // Set default mock responses
-    mockInvoke.mockResolvedValue({
-      comparisons: [],
-      in_sync_count: 0,
-      needs_upload_count: 0,
-      needs_download_count: 0,
-      conflict_count: 0,
+    mockInvoke.mockImplementation((cmd) => {
+      if (cmd === "get_credentials") {
+        return Promise.resolve({ has_credentials: true });
+      }
+      return Promise.resolve({
+        comparisons: [],
+        in_sync_count: 0,
+        needs_upload_count: 0,
+        needs_download_count: 0,
+        conflict_count: 0,
+      });
     });
     mockOpen.mockResolvedValue(null);
   });
 
   describe("Initial Rendering", () => {
-    it("should render MainPage by default", () => {
+    it("should render MainPage by default when credentials exist", async () => {
       render(<App />);
 
-      expect(screen.getByText("file-funeral")).toBeInTheDocument();
-      expect(screen.getByText("Cloud file synchronization application")).toBeInTheDocument();
+      await waitFor(() => {
+        expect(screen.getByText("file-funeral")).toBeInTheDocument();
+        expect(screen.getByText("Cloud file synchronization application")).toBeInTheDocument();
+      });
     });
 
-    it("should show Settings button on MainPage", () => {
+    it("should show Settings button on MainPage", async () => {
       render(<App />);
 
-      expect(screen.getByRole("button", { name: /Settings/i })).toBeInTheDocument();
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: /Settings/i })).toBeInTheDocument();
+      });
     });
   });
 
@@ -62,6 +71,10 @@ describe("App", () => {
     it("should navigate to SettingsPage when Settings button is clicked", async () => {
       const user = userEvent.setup();
       render(<App />);
+
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: /Settings/i })).toBeInTheDocument();
+      });
 
       const settingsButton = screen.getByRole("button", { name: /Settings/i });
       await user.click(settingsButton);
@@ -75,6 +88,10 @@ describe("App", () => {
     it("should not show MainPage content when on SettingsPage", async () => {
       const user = userEvent.setup();
       render(<App />);
+
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: /Settings/i })).toBeInTheDocument();
+      });
 
       const settingsButton = screen.getByRole("button", { name: /Settings/i });
       await user.click(settingsButton);
@@ -90,6 +107,10 @@ describe("App", () => {
       const user = userEvent.setup();
       render(<App />);
 
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: /Settings/i })).toBeInTheDocument();
+      });
+
       const settingsButton = screen.getByRole("button", { name: /Settings/i });
       await user.click(settingsButton);
 
@@ -103,6 +124,10 @@ describe("App", () => {
     it("should navigate back to MainPage when Back button is clicked", async () => {
       const user = userEvent.setup();
       render(<App />);
+
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: /Settings/i })).toBeInTheDocument();
+      });
 
       // Navigate to Settings
       const settingsButton = screen.getByRole("button", { name: /Settings/i });
@@ -125,6 +150,10 @@ describe("App", () => {
       const user = userEvent.setup();
       render(<App />);
 
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: /Settings/i })).toBeInTheDocument();
+      });
+
       // Navigate to Settings and back
       const settingsButton = screen.getByRole("button", { name: /Settings/i });
       await user.click(settingsButton);
@@ -144,6 +173,10 @@ describe("App", () => {
     it("should show Settings button again when back on MainPage", async () => {
       const user = userEvent.setup();
       render(<App />);
+
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: /Settings/i })).toBeInTheDocument();
+      });
 
       // Navigate to Settings and back
       const settingsButton = screen.getByRole("button", { name: /Settings/i });
@@ -166,6 +199,10 @@ describe("App", () => {
     it("should handle multiple navigation cycles correctly", async () => {
       const user = userEvent.setup();
       render(<App />);
+
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: /Settings/i })).toBeInTheDocument();
+      });
 
       // First cycle: Main -> Settings -> Main
       await user.click(screen.getByRole("button", { name: /Settings/i }));
