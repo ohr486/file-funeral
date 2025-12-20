@@ -71,6 +71,41 @@ npm run lint:fix
 npm run format
 ```
 
+## AWS認証情報の設定（macOS）
+
+### 1. AWS認証情報の取得
+
+1. [AWS Management Console](https://console.aws.amazon.com/)にサインイン
+2. IAM（Identity and Access Management）に移動
+3. 新しいユーザーを作成、または既存のユーザーを選択
+4. 「AmazonS3FullAccess」ポリシーをアタッチ
+5. アクセスキーを生成し、以下の情報をコピー:
+   - Access Key ID（例: `AKIAIOSFODNN7EXAMPLE`）
+   - Secret Access Key（例: `wJalrXUtnFEMI/K7MDENG/...`）
+
+### 2. アプリから認証情報を設定
+
+1. アプリを起動: `npm run tauri:dev`
+2. メイン画面右上の「Settings」ボタンをクリック
+3. AWS認証情報フォームに入力:
+   - **Access Key ID**: 取得したアクセスキーID
+   - **Secret Access Key**: 取得したシークレットアクセスキー
+   - **Region**: 使用するAWSリージョン（例: `us-east-1`, `ap-northeast-1`）
+   - **S3 Bucket Name**: 同期先のS3バケット名
+4. 「Save Credentials」ボタンをクリック
+5. 自動的に接続テストが実行され、成功すると「Connected successfully」と表示されます
+
+### 3. macOSキーチェーンでの確認（オプション）
+
+認証情報はmacOSのキーチェーンに安全に保存されます。確認するには:
+
+1. Spotlight検索で「キーチェーンアクセス」を開く
+2. 左側で「ログイン」キーチェーンを選択
+3. 検索バーで「file-funeral」を検索
+4. AWS認証情報が暗号化されて保存されていることを確認できます
+
+> **セキュリティ**: 認証情報は平文では保存されず、macOSのキーチェーンAPIを使用して暗号化されます。
+
 ## プロジェクト構造
 
 ```

@@ -19,6 +19,7 @@ pub fn run() {
     })
     .invoke_handler(tauri::generate_handler![
       commands::set_credentials,
+      commands::get_credentials,
       commands::test_connection,
       commands::list_files,
       commands::get_sync_status,

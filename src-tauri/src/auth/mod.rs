@@ -4,10 +4,18 @@
 //! using OS-native keychain services (macOS Keychain, Windows Credential Manager,
 //! Linux Secret Service API) via the `keyring` crate.
 //!
+//! In development mode (debug builds), credentials are stored in a JSON file:
+//! - Production: ~/.{service-name}/credentials.json (e.g., ~/.file-funeral/credentials.json)
+//! - Test: /tmp/.{service-name}/credentials.json (e.g., /tmp/.file-funeral-test/credentials.json)
+//!
+//! This is for compatibility with Tauri's hot-reload and to avoid polluting home directory during tests.
+//!
 //! It also supports fallback to environment variables for development purposes.
 
 use keyring::Entry;
 use serde::{Deserialize, Serialize};
+use std::fs;
+use std::path::PathBuf;
 use thiserror::Error;
 
 /// Service name used for keyring entries
@@ -27,6 +35,12 @@ pub enum CredentialError {
 
     #[error("Environment variable not found: {0}")]
     EnvVarNotFound(String),
+
+    #[error("File system error: {0}")]
+    FileSystem(#[from] std::io::Error),
+
+    #[error("JSON serialization error: {0}")]
+    Serialization(#[from] serde_json::Error),
 }
 
 /// AWS S3 credentials
@@ -63,28 +77,133 @@ impl CredentialManager {
         Self { service_name }
     }
 
-    /// Save AWS credentials to the OS keychain
-    ///
-    /// Each credential component is stored separately in the keychain for security.
-    /// The keys are named: "aws_access_key_id", "aws_secret_access_key", "aws_region", "s3_bucket_name"
-    pub fn save_aws_credentials(&self, credentials: &AwsCredentials) -> Result<(), CredentialError> {
-        // Save each component separately
-        self.set_credential("aws_access_key_id", &credentials.access_key_id)?;
-        self.set_credential("aws_secret_access_key", &credentials.secret_access_key)?;
-        self.set_credential("aws_region", &credentials.region)?;
-        self.set_credential("s3_bucket_name", &credentials.bucket_name)?;
+    /// Get the path to the credentials file (used in development mode)
+    fn get_credentials_file_path(service_name: &str) -> Result<PathBuf, CredentialError> {
+        // For test services, use tmp directory to avoid polluting home directory
+        let config_dir = if service_name.starts_with("file-funeral-test") {
+            // Use /tmp for test credentials
+            PathBuf::from("/tmp").join(format!(".{}", service_name))
+        } else {
+            // Use home directory for production credentials
+            let home = std::env::var("HOME")
+                .map_err(|_| CredentialError::FileSystem(
+                    std::io::Error::new(std::io::ErrorKind::NotFound, "HOME directory not found")
+                ))?;
+            PathBuf::from(home).join(format!(".{}", service_name))
+        };
+
+        // Create directory if it doesn't exist
+        if !config_dir.exists() {
+            fs::create_dir_all(&config_dir)?;
+
+            // Set directory permissions to 700 (owner only) on Unix
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let mut perms = fs::metadata(&config_dir)?.permissions();
+                perms.set_mode(0o700);
+                fs::set_permissions(&config_dir, perms)?;
+            }
+        }
+
+        Ok(config_dir.join("credentials.json"))
+    }
+
+    /// Save credentials to file (development mode)
+    fn save_to_file(&self, credentials: &AwsCredentials) -> Result<(), CredentialError> {
+        log::info!("Saving credentials to file (development mode)");
+        let file_path = Self::get_credentials_file_path(&self.service_name)?;
+        let json = serde_json::to_string_pretty(credentials)?;
+        fs::write(&file_path, json)?;
+
+        // Set file permissions to 600 (owner read/write only) on Unix
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut perms = fs::metadata(&file_path)?.permissions();
+            perms.set_mode(0o600);
+            fs::set_permissions(&file_path, perms)?;
+        }
+
+        log::info!("Credentials saved to file: {:?}", file_path);
         Ok(())
     }
 
-    /// Load AWS credentials from the OS keychain
+    /// Load credentials from file (development mode)
+    fn load_from_file(&self) -> Result<AwsCredentials, CredentialError> {
+        log::info!("Loading credentials from file (development mode)");
+        let file_path = Self::get_credentials_file_path(&self.service_name)?;
+
+        if !file_path.exists() {
+            log::warn!("Credentials file not found: {:?}", file_path);
+            return Err(CredentialError::NotFound("credentials file".to_string()));
+        }
+
+        let json = fs::read_to_string(&file_path)?;
+        let credentials: AwsCredentials = serde_json::from_str(&json)?;
+        log::info!("Credentials loaded from file: {:?}", file_path);
+        Ok(credentials)
+    }
+
+    /// Save AWS credentials to the OS keychain or file (development mode)
     ///
-    /// If any credential is not found in the keychain, falls back to environment variables.
+    /// In development mode (debug builds):
+    /// - Production: ~/.{service-name}/credentials.json
+    /// - Test: /tmp/.{service-name}/credentials.json
+    ///
+    /// In release mode, each credential component is stored separately in the keychain for security.
+    /// The keys are named: "aws_access_key_id", "aws_secret_access_key", "aws_region", "s3_bucket_name"
+    pub fn save_aws_credentials(&self, credentials: &AwsCredentials) -> Result<(), CredentialError> {
+        #[cfg(debug_assertions)]
+        {
+            log::info!("Development mode: using file-based credential storage");
+            self.save_to_file(credentials)
+        }
+
+        #[cfg(not(debug_assertions))]
+        {
+            log::info!("Release mode: using OS keychain");
+            // Save each component separately
+            self.set_credential("aws_access_key_id", &credentials.access_key_id)?;
+            self.set_credential("aws_secret_access_key", &credentials.secret_access_key)?;
+            self.set_credential("aws_region", &credentials.region)?;
+            self.set_credential("s3_bucket_name", &credentials.bucket_name)?;
+            Ok(())
+        }
+    }
+
+    /// Load AWS credentials from the OS keychain or file (development mode)
+    ///
+    /// In development mode (debug builds), credentials are loaded from:
+    /// - Production: ~/.{service-name}/credentials.json
+    /// - Test: /tmp/.{service-name}/credentials.json
+    ///
+    /// In release mode, if any credential is not found in the keychain, falls back to environment variables.
+    ///
     /// Environment variable fallbacks:
     /// - AWS_ACCESS_KEY_ID
     /// - AWS_SECRET_ACCESS_KEY
     /// - AWS_REGION (defaults to "us-east-1" if not set)
     /// - S3_BUCKET_NAME
     pub fn load_aws_credentials(&self) -> Result<AwsCredentials, CredentialError> {
+        #[cfg(debug_assertions)]
+        {
+            log::info!("Development mode: using file-based credential storage");
+            // Try file first, then fall back to environment variables
+            match self.load_from_file() {
+                Ok(credentials) => return Ok(credentials),
+                Err(e) => {
+                    log::warn!("Failed to load from file: {}, trying environment variables", e);
+                }
+            }
+        }
+
+        #[cfg(not(debug_assertions))]
+        {
+            log::info!("Release mode: using OS keychain");
+        }
+
+        // Fall back to keychain/environment variables
         let access_key_id = self.get_credential_with_env_fallback("aws_access_key_id", "AWS_ACCESS_KEY_ID")?;
         let secret_access_key = self.get_credential_with_env_fallback("aws_secret_access_key", "AWS_SECRET_ACCESS_KEY")?;
         let region = self.get_credential_with_env_fallback("aws_region", "AWS_REGION")
@@ -99,9 +218,30 @@ impl CredentialManager {
         })
     }
 
-    /// Delete AWS credentials from the OS keychain
+    /// Delete credentials from file (development mode)
+    fn delete_from_file(&self) -> Result<(), CredentialError> {
+        let file_path = Self::get_credentials_file_path(&self.service_name)?;
+        if file_path.exists() {
+            fs::remove_file(&file_path)?;
+            log::info!("Credentials file deleted: {:?}", file_path);
+        }
+        Ok(())
+    }
+
+    /// Delete AWS credentials from the OS keychain or file (development mode)
     pub fn delete_aws_credentials(&self) -> Result<(), CredentialError> {
-        // Try to delete each credential, but don't fail if they don't exist
+        #[cfg(debug_assertions)]
+        {
+            log::info!("Development mode: deleting file-based credentials");
+            let _ = self.delete_from_file();
+        }
+
+        #[cfg(not(debug_assertions))]
+        {
+            log::info!("Release mode: deleting keychain credentials");
+        }
+
+        // Try to delete each credential from keychain, but don't fail if they don't exist
         let _ = self.delete_credential("aws_access_key_id");
         let _ = self.delete_credential("aws_secret_access_key");
         let _ = self.delete_credential("aws_region");
@@ -115,21 +255,33 @@ impl CredentialManager {
     }
 
     /// Set a credential in the OS keychain
+    #[allow(dead_code)]
     fn set_credential(&self, key: &str, value: &str) -> Result<(), CredentialError> {
+        log::info!("Setting credential in keychain: service={}, key={}", self.service_name, key);
         let entry = Entry::new(&self.service_name, key)?;
         entry.set_password(value)?;
+        log::info!("Credential set successfully: key={}", key);
         Ok(())
     }
 
     /// Get a credential from the OS keychain
+    #[allow(dead_code)]
     fn get_credential(&self, key: &str) -> Result<String, CredentialError> {
+        log::info!("Getting credential from keychain: service={}, key={}", self.service_name, key);
         let entry = Entry::new(&self.service_name, key)?;
         match entry.get_password() {
-            Ok(password) => Ok(password),
+            Ok(password) => {
+                log::info!("Credential retrieved successfully: key={}", key);
+                Ok(password)
+            }
             Err(keyring::Error::NoEntry) => {
+                log::warn!("Credential not found in keychain: key={}", key);
                 Err(CredentialError::NotFound(key.to_string()))
             }
-            Err(e) => Err(CredentialError::KeychainAccess(e)),
+            Err(e) => {
+                log::error!("Keychain access error for key={}: {}", key, e);
+                Err(CredentialError::KeychainAccess(e))
+            }
         }
     }
 
@@ -137,17 +289,33 @@ impl CredentialManager {
     fn get_credential_with_env_fallback(&self, key: &str, env_var: &str) -> Result<String, CredentialError> {
         // First try keychain
         match self.get_credential(key) {
-            Ok(value) => Ok(value),
-            Err(CredentialError::NotFound(_)) => {
-                // Fall back to environment variable
-                std::env::var(env_var)
-                    .map_err(|_| CredentialError::EnvVarNotFound(env_var.to_string()))
+            Ok(value) => {
+                log::info!("Using keychain value for key={}", key);
+                Ok(value)
             }
-            Err(e) => Err(e),
+            Err(CredentialError::NotFound(_)) => {
+                log::info!("Keychain value not found for key={}, falling back to env var {}", key, env_var);
+                // Fall back to environment variable
+                match std::env::var(env_var) {
+                    Ok(value) => {
+                        log::info!("Using environment variable {} for key={}", env_var, key);
+                        Ok(value)
+                    }
+                    Err(_) => {
+                        log::error!("Environment variable {} not found for key={}", env_var, key);
+                        Err(CredentialError::EnvVarNotFound(env_var.to_string()))
+                    }
+                }
+            }
+            Err(e) => {
+                log::error!("Error getting credential for key={}: {}", key, e);
+                Err(e)
+            }
         }
     }
 
     /// Delete a credential from the OS keychain
+    #[allow(dead_code)]
     fn delete_credential(&self, key: &str) -> Result<(), CredentialError> {
         let entry = Entry::new(&self.service_name, key)?;
         entry.delete_credential()?;

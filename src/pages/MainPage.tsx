@@ -1,14 +1,18 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
-import { Folder, RefreshCw } from "lucide-react";
+import { Folder, RefreshCw, Settings } from "lucide-react";
 import { FileList } from "@/components/FileList";
 import { SyncButton } from "@/components/SyncButton";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { SyncStatusResponse } from "@/types";
 
-export function MainPage() {
+interface MainPageProps {
+  onSettingsClick?: () => void;
+}
+
+export function MainPage({ onSettingsClick }: MainPageProps) {
   const [localPath, setLocalPath] = useState("");
   const [remotePrefix, setRemotePrefix] = useState("");
   const [syncStatus, setSyncStatus] = useState<SyncStatusResponse | null>(null);
@@ -95,6 +99,12 @@ export function MainPage() {
               Cloud file synchronization application
             </p>
           </div>
+          {onSettingsClick && (
+            <Button onClick={onSettingsClick} variant="outline">
+              <Settings className="mr-2 h-4 w-4" />
+              Settings
+            </Button>
+          )}
         </div>
 
         {/* Folder selection and sync controls */}

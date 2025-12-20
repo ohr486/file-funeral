@@ -61,6 +61,16 @@ pub struct CredentialsResponse {
     pub message: String,
 }
 
+/// Response structure for getting credentials (with masked secret)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GetCredentialsResponse {
+    pub has_credentials: bool,
+    pub access_key_id: Option<String>,
+    pub region: Option<String>,
+    pub bucket_name: Option<String>,
+    // Secret access key is never returned for security reasons
+}
+
 /// Response structure for connection test
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConnectionTestResponse {
@@ -154,72 +164,182 @@ impl From<ComparisonResult> for ComparisonResultDto {
 pub async fn set_credentials(
     request: SetCredentialsRequest,
 ) -> CommandResult<CredentialsResponse> {
+    log::info!("set_credentials called");
+
     // Validate input
     if request.access_key_id.is_empty() {
+        log::error!("Access key ID is empty");
         return Err(CommandError::InvalidInput(
             "Access key ID cannot be empty".to_string(),
         ));
     }
-    if request.secret_access_key.is_empty() {
-        return Err(CommandError::InvalidInput(
-            "Secret access key cannot be empty".to_string(),
-        ));
-    }
     if request.region.is_empty() {
+        log::error!("Region is empty");
         return Err(CommandError::InvalidInput(
             "Region cannot be empty".to_string(),
         ));
     }
     if request.bucket_name.is_empty() {
+        log::error!("Bucket name is empty");
         return Err(CommandError::InvalidInput(
             "Bucket name cannot be empty".to_string(),
         ));
     }
 
+    // If secret key is empty, try to load existing credentials and keep the existing secret key
+    let secret_access_key = if request.secret_access_key.is_empty() {
+        log::info!("Secret access key is empty, attempting to load existing value");
+        let manager = CredentialManager::new();
+        match manager.load_aws_credentials() {
+            Ok(existing) => {
+                log::info!("Using existing secret access key");
+                existing.secret_access_key
+            }
+            Err(_) => {
+                log::error!("No existing credentials found and secret key is empty");
+                return Err(CommandError::InvalidInput(
+                    "Secret access key cannot be empty".to_string(),
+                ));
+            }
+        }
+    } else {
+        request.secret_access_key
+    };
+
     let credentials = AwsCredentials {
         access_key_id: request.access_key_id,
-        secret_access_key: request.secret_access_key,
+        secret_access_key,
         region: request.region,
         bucket_name: request.bucket_name,
     };
 
+    log::info!("Attempting to save credentials to keychain");
     let manager = CredentialManager::new();
-    manager.save_aws_credentials(&credentials)?;
-
-    Ok(CredentialsResponse {
-        success: true,
-        message: "Credentials saved successfully".to_string(),
-    })
+    match manager.save_aws_credentials(&credentials) {
+        Ok(_) => {
+            log::info!("Credentials saved successfully");
+            Ok(CredentialsResponse {
+                success: true,
+                message: "Credentials saved successfully".to_string(),
+            })
+        }
+        Err(e) => {
+            log::error!("Failed to save credentials: {}", e);
+            Err(CommandError::Credential(e))
+        }
+    }
 }
 
 /// Test connection to AWS S3
 ///
 /// This command verifies that the stored credentials are valid by attempting
-/// to connect to S3 and list the bucket.
+/// to connect to S3 and access the specified bucket.
 ///
 /// # Returns
 /// A response indicating whether the connection was successful
 #[tauri::command]
 pub async fn test_connection() -> CommandResult<ConnectionTestResponse> {
+    log::info!("test_connection called");
+
     // Load credentials
     let manager = CredentialManager::new();
-    let credentials = manager.load_aws_credentials().map_err(|_| {
+    log::info!("Attempting to load credentials from keychain");
+
+    let credentials = manager.load_aws_credentials().map_err(|e| {
+        log::error!("Failed to load credentials: {}", e);
         CommandError::NotConfigured("AWS credentials not found. Please set credentials first.".to_string())
     })?;
 
-    // TODO: Actually test the connection by creating an S3 client and listing the bucket
-    // For now, we'll return success if credentials exist
-    // This will be implemented in the next phase when we integrate the actual S3Provider
+    log::info!("Credentials loaded successfully");
 
-    Ok(ConnectionTestResponse {
-        connected: true,
-        message: format!(
-            "Successfully loaded credentials for region {} and bucket {}",
-            credentials.region, credentials.bucket_name
-        ),
-        region: Some(credentials.region),
-        bucket_name: Some(credentials.bucket_name),
-    })
+    // Test actual connection to S3
+    log::info!("Testing connection to S3 bucket: {}", credentials.bucket_name);
+
+    // Create AWS config with behavior version
+    let region = aws_sdk_s3::config::Region::new(credentials.region.clone());
+    let creds = aws_sdk_s3::config::Credentials::new(
+        credentials.access_key_id.clone(),
+        credentials.secret_access_key.clone(),
+        None,
+        None,
+        "file-funeral",
+    );
+
+    let sdk_config = aws_config::defaults(aws_config::BehaviorVersion::latest())
+        .region(region)
+        .credentials_provider(creds)
+        .load()
+        .await;
+
+    let client = aws_sdk_s3::Client::new(&sdk_config);
+
+    // Try to access the bucket (head_bucket is a lightweight operation)
+    match client.head_bucket()
+        .bucket(&credentials.bucket_name)
+        .send()
+        .await
+    {
+        Ok(_) => {
+            log::info!("Successfully connected to S3 bucket: {}", credentials.bucket_name);
+            Ok(ConnectionTestResponse {
+                connected: true,
+                message: format!(
+                    "Successfully connected to bucket '{}' in region '{}'",
+                    credentials.bucket_name, credentials.region
+                ),
+                region: Some(credentials.region),
+                bucket_name: Some(credentials.bucket_name),
+            })
+        }
+        Err(e) => {
+            log::error!("Failed to connect to S3: {:?}", e);
+            let error_message = format!(
+                "Failed to connect to S3: {}. Please check your credentials and bucket name.",
+                e
+            );
+            Ok(ConnectionTestResponse {
+                connected: false,
+                message: error_message,
+                region: Some(credentials.region),
+                bucket_name: Some(credentials.bucket_name),
+            })
+        }
+    }
+}
+
+/// Get stored AWS credentials (without secret key for security)
+///
+/// This command retrieves the stored credentials and returns them without the secret access key.
+/// Used to populate the settings form when the user navigates back to the settings page.
+///
+/// # Returns
+/// A response containing the non-sensitive credential information
+#[tauri::command]
+pub async fn get_credentials() -> CommandResult<GetCredentialsResponse> {
+    log::info!("get_credentials called");
+
+    let manager = CredentialManager::new();
+
+    match manager.load_aws_credentials() {
+        Ok(credentials) => {
+            log::info!("Credentials loaded successfully");
+            Ok(GetCredentialsResponse {
+                has_credentials: true,
+                access_key_id: Some(credentials.access_key_id),
+                region: Some(credentials.region),
+                bucket_name: Some(credentials.bucket_name),
+            })
+        }
+        Err(e) => {
+            log::info!("No credentials found: {}", e);
+            Ok(GetCredentialsResponse {
+                has_credentials: false,
+                access_key_id: None,
+                region: None,
+                bucket_name: None,
+            })
+        }
+    }
 }
 
 /// List files from cloud storage
@@ -466,9 +586,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_set_credentials_validates_all_fields() {
+        // Clean up any existing credentials before testing
+        let manager = crate::auth::CredentialManager::new();
+        let _ = manager.delete_aws_credentials();
+
         let test_cases = vec![
             ("", "secret", "region", "bucket", "Access key ID"),
-            ("access", "", "region", "bucket", "Secret access key"),
+            ("access", "", "region", "bucket", "Secret access key"),  // Now fails because no existing credentials
             ("access", "secret", "", "bucket", "Region"),
             ("access", "secret", "region", "", "Bucket name"),
         ];
@@ -490,10 +614,17 @@ mod tests {
                 _ => panic!("Expected InvalidInput error for {}", expected_error),
             }
         }
+
+        // Cleanup after test
+        let _ = manager.delete_aws_credentials();
     }
 
     #[tokio::test]
     async fn test_list_files_empty_result() {
+        // Clean up any existing credentials before testing
+        let manager = crate::auth::CredentialManager::new();
+        let _ = manager.delete_aws_credentials();
+
         let request = ListFilesRequest {
             prefix: "test/".to_string(),
         };
@@ -510,6 +641,9 @@ mod tests {
             }
             _ => panic!("Expected NotConfigured error"),
         }
+
+        // Cleanup after test
+        let _ = manager.delete_aws_credentials();
     }
 
     #[tokio::test]
