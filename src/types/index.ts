@@ -58,6 +58,13 @@ export interface CredentialsResponse {
   message: string;
 }
 
+export interface GetCredentialsResponse {
+  has_credentials: boolean;
+  access_key_id?: string;
+  region?: string;
+  bucket_name?: string;
+}
+
 export interface ConnectionTestResponse {
   connected: boolean;
   message: string;

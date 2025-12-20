@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { Settings, CheckCircle2, AlertCircle, Folder } from "lucide-react";
@@ -9,7 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
-import { SetCredentialsRequest, CredentialsResponse, ConnectionTestResponse } from "@/types";
+import { SetCredentialsRequest, CredentialsResponse, ConnectionTestResponse, GetCredentialsResponse } from "@/types";
 
 interface SettingsPageProps {
   onBack?: () => void;
@@ -27,6 +27,29 @@ export function SettingsPage({ onBack }: SettingsPageProps) {
   const [testMessage, setTestMessage] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [credentialsSaved, setCredentialsSaved] = useState(false);
+
+  // Load existing credentials when component mounts
+  useEffect(() => {
+    const loadCredentials = async () => {
+      try {
+        const response = await invoke<GetCredentialsResponse>("get_credentials");
+
+        if (response.has_credentials) {
+          if (response.access_key_id) setAccessKeyId(response.access_key_id);
+          if (response.region) setRegion(response.region);
+          if (response.bucket_name) setBucketName(response.bucket_name);
+          setCredentialsSaved(true);
+          // Secret key is not returned for security, so it remains empty
+        }
+      } catch (error) {
+        console.error("Failed to load credentials:", error);
+        // Silently fail - user can enter credentials manually
+      }
+    };
+
+    loadCredentials();
+  }, []);
 
   const validateForm = (): boolean => {
     const newErrors: Record<string, string> = {};
@@ -35,7 +58,8 @@ export function SettingsPage({ onBack }: SettingsPageProps) {
       newErrors.accessKeyId = "Access Key ID is required";
     }
 
-    if (!secretAccessKey.trim()) {
+    // Secret key is only required if we don't have saved credentials
+    if (!secretAccessKey.trim() && !credentialsSaved) {
       newErrors.secretAccessKey = "Secret Access Key is required";
     }
 
@@ -95,11 +119,17 @@ export function SettingsPage({ onBack }: SettingsPageProps) {
       });
 
       if (response.success) {
+        setCredentialsSaved(true);
         toast.success("Credentials saved successfully", {
           description: "Your AWS credentials have been securely stored",
         });
         // Clear sensitive data from state after saving
         setSecretAccessKey("");
+
+        // Automatically test connection after successful save
+        setTimeout(() => {
+          handleTestConnection();
+        }, 500);
       } else {
         toast.error("Failed to save credentials", {
           description: response.message,
@@ -116,6 +146,13 @@ export function SettingsPage({ onBack }: SettingsPageProps) {
   };
 
   const handleTestConnection = async () => {
+    if (!credentialsSaved) {
+      toast.error("Please save credentials first", {
+        description: "You need to save your AWS credentials before testing the connection",
+      });
+      return;
+    }
+
     setTestStatus("testing");
     setTestMessage("");
 
@@ -207,7 +244,11 @@ export function SettingsPage({ onBack }: SettingsPageProps) {
               <Input
                 id="secretAccessKey"
                 type="password"
-                placeholder="wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+                placeholder={
+                  credentialsSaved && !secretAccessKey
+                    ? "••••••••  (Leave empty to keep existing)"
+                    : "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+                }
                 value={secretAccessKey}
                 onChange={(e) => {
                   setSecretAccessKey(e.target.value);
@@ -219,6 +260,11 @@ export function SettingsPage({ onBack }: SettingsPageProps) {
               />
               {errors.secretAccessKey && (
                 <p className="text-sm text-red-500">{errors.secretAccessKey}</p>
+              )}
+              {credentialsSaved && !secretAccessKey && (
+                <p className="text-sm text-muted-foreground">
+                  Saved credentials found. Leave empty to keep existing secret key.
+                </p>
               )}
             </div>
 
@@ -291,8 +337,13 @@ export function SettingsPage({ onBack }: SettingsPageProps) {
               <Button
                 onClick={handleTestConnection}
                 variant="outline"
-                disabled={testStatus === "testing"}
+                disabled={testStatus === "testing" || !credentialsSaved}
                 className="flex-1"
+                title={
+                  !credentialsSaved
+                    ? "Save credentials first to test connection"
+                    : "Test connection to AWS S3"
+                }
               >
                 {testStatus === "testing" ? "Testing..." : "Test Connection"}
               </Button>
