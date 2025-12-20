@@ -53,7 +53,12 @@ pub struct FileInfo {
 
 impl FileInfo {
     /// 新しいFileInfoインスタンスを作成
-    pub fn new(path: String, size: u64, last_modified: DateTime<Utc>, etag: Option<String>) -> Self {
+    pub fn new(
+        path: String,
+        size: u64,
+        last_modified: DateTime<Utc>,
+        etag: Option<String>,
+    ) -> Self {
         Self {
             path,
             size,
@@ -204,7 +209,8 @@ mod tests {
         );
 
         let json = serde_json::to_string(&original).expect("Failed to serialize");
-        let deserialized: FileMetadata = serde_json::from_str(&json).expect("Failed to deserialize");
+        let deserialized: FileMetadata =
+            serde_json::from_str(&json).expect("Failed to deserialize");
 
         assert_eq!(original, deserialized);
     }
@@ -283,8 +289,18 @@ mod tests {
         let time1 = Utc.with_ymd_and_hms(2025, 12, 17, 10, 0, 0).unwrap();
         let time2 = Utc.with_ymd_and_hms(2025, 12, 17, 11, 0, 0).unwrap();
 
-        let file1 = FileInfo::new("file.txt".to_string(), 1024, time1, Some("etag1".to_string()));
-        let file2 = FileInfo::new("file.txt".to_string(), 1024, time2, Some("etag1".to_string()));
+        let file1 = FileInfo::new(
+            "file.txt".to_string(),
+            1024,
+            time1,
+            Some("etag1".to_string()),
+        );
+        let file2 = FileInfo::new(
+            "file.txt".to_string(),
+            1024,
+            time2,
+            Some("etag1".to_string()),
+        );
 
         // 更新時刻が異なる場合は同期が必要
         assert_ne!(file1.last_modified, file2.last_modified);
@@ -303,8 +319,18 @@ mod tests {
     #[test]
     fn test_files_identical() {
         let now = Utc.with_ymd_and_hms(2025, 12, 17, 10, 0, 0).unwrap();
-        let file1 = FileInfo::new("file.txt".to_string(), 1024, now, Some("same-etag".to_string()));
-        let file2 = FileInfo::new("file.txt".to_string(), 1024, now, Some("same-etag".to_string()));
+        let file1 = FileInfo::new(
+            "file.txt".to_string(),
+            1024,
+            now,
+            Some("same-etag".to_string()),
+        );
+        let file2 = FileInfo::new(
+            "file.txt".to_string(),
+            1024,
+            now,
+            Some("same-etag".to_string()),
+        );
 
         // 全てが同じ場合は同期不要
         assert_eq!(file1, file2);
@@ -317,13 +343,34 @@ mod tests {
     #[test]
     fn test_storage_error_display() {
         let errors = vec![
-            (StorageError::Network("Timeout".to_string()), "ネットワークエラー: Timeout"),
-            (StorageError::Authentication("Invalid token".to_string()), "認証エラー: Invalid token"),
-            (StorageError::NotFound("missing.txt".to_string()), "ファイルが見つかりません: missing.txt"),
-            (StorageError::Upload("Failed".to_string()), "アップロードエラー: Failed"),
-            (StorageError::Download("Failed".to_string()), "ダウンロードエラー: Failed"),
-            (StorageError::Metadata("No metadata".to_string()), "メタデータエラー: No metadata"),
-            (StorageError::Other("Unknown".to_string()), "その他のエラー: Unknown"),
+            (
+                StorageError::Network("Timeout".to_string()),
+                "ネットワークエラー: Timeout",
+            ),
+            (
+                StorageError::Authentication("Invalid token".to_string()),
+                "認証エラー: Invalid token",
+            ),
+            (
+                StorageError::NotFound("missing.txt".to_string()),
+                "ファイルが見つかりません: missing.txt",
+            ),
+            (
+                StorageError::Upload("Failed".to_string()),
+                "アップロードエラー: Failed",
+            ),
+            (
+                StorageError::Download("Failed".to_string()),
+                "ダウンロードエラー: Failed",
+            ),
+            (
+                StorageError::Metadata("No metadata".to_string()),
+                "メタデータエラー: No metadata",
+            ),
+            (
+                StorageError::Other("Unknown".to_string()),
+                "その他のエラー: Unknown",
+            ),
         ];
 
         for (error, expected_msg) in errors {
@@ -427,7 +474,11 @@ mod tests {
         // ダウンロード
         let download_result = storage.download("test.txt").await;
         assert!(download_result.is_ok(), "Download should succeed");
-        assert_eq!(download_result.unwrap(), test_data, "Downloaded data should match uploaded data");
+        assert_eq!(
+            download_result.unwrap(),
+            test_data,
+            "Downloaded data should match uploaded data"
+        );
     }
 
     #[tokio::test]
@@ -435,7 +486,10 @@ mod tests {
         let storage = StatefulMockStorage::new();
 
         let result = storage.download("nonexistent.txt").await;
-        assert!(result.is_err(), "Download should fail for non-existent file");
+        assert!(
+            result.is_err(),
+            "Download should fail for non-existent file"
+        );
 
         match result {
             Err(StorageError::NotFound(path)) => {
@@ -452,9 +506,18 @@ mod tests {
         let metadata = FileMetadata::new(10, now, None, None);
 
         // 複数のファイルをアップロード
-        storage.upload("docs/file1.txt", b"content1", metadata.clone()).await.unwrap();
-        storage.upload("docs/file2.txt", b"content2", metadata.clone()).await.unwrap();
-        storage.upload("images/pic.jpg", b"image", metadata.clone()).await.unwrap();
+        storage
+            .upload("docs/file1.txt", b"content1", metadata.clone())
+            .await
+            .unwrap();
+        storage
+            .upload("docs/file2.txt", b"content2", metadata.clone())
+            .await
+            .unwrap();
+        storage
+            .upload("images/pic.jpg", b"image", metadata.clone())
+            .await
+            .unwrap();
 
         // "docs/"プレフィックスでリスト取得
         let result = storage.list("docs/").await;
@@ -505,7 +568,10 @@ mod tests {
         let test_data = b"Test metadata content";
         let metadata = FileMetadata::new(test_data.len() as u64, now, None, None);
 
-        storage.upload("metadata_test.txt", test_data, metadata).await.unwrap();
+        storage
+            .upload("metadata_test.txt", test_data, metadata)
+            .await
+            .unwrap();
 
         let result = storage.get_metadata("metadata_test.txt").await;
         assert!(result.is_ok());
@@ -538,7 +604,9 @@ mod tests {
         let large_data = vec![0u8; 1_048_576];
         let metadata = FileMetadata::new(large_data.len() as u64, now, None, None);
 
-        let result = storage.upload("large_file.bin", &large_data, metadata).await;
+        let result = storage
+            .upload("large_file.bin", &large_data, metadata)
+            .await;
         assert!(result.is_ok());
 
         let downloaded = storage.download("large_file.bin").await.unwrap();
@@ -587,16 +655,17 @@ mod tests {
 
         // 初期ファイルをアップロード
         let metadata = FileMetadata::new(7, now, None, None);
-        storage.upload("shared.txt", b"initial", metadata).await.unwrap();
+        storage
+            .upload("shared.txt", b"initial", metadata)
+            .await
+            .unwrap();
 
         let mut handles = vec![];
 
         // 5つの読み取りタスク
         for _ in 0..5 {
             let storage_clone = Arc::clone(&storage);
-            let handle = tokio::spawn(async move {
-                storage_clone.download("shared.txt").await
-            });
+            let handle = tokio::spawn(async move { storage_clone.download("shared.txt").await });
             handles.push(handle);
         }
 
@@ -620,7 +689,9 @@ mod tests {
         let metadata = FileMetadata::new(11, now, None, None);
 
         // trait object経由でメソッドを呼び出し
-        let upload_result = storage.upload("trait_test.txt", b"trait works", metadata).await;
+        let upload_result = storage
+            .upload("trait_test.txt", b"trait works", metadata)
+            .await;
         assert!(upload_result.is_ok());
 
         let download_result = storage.download("trait_test.txt").await;

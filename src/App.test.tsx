@@ -229,8 +229,14 @@ describe("App", () => {
   });
 
   describe("Toaster", () => {
-    it("should render Toaster component", () => {
+    it("should render Toaster component", async () => {
       const { container } = render(<App />);
+
+      // Wait for async state updates to complete
+      await waitFor(() => {
+        expect(screen.getByText("file-funeral")).toBeInTheDocument();
+      });
+
       // Toaster is mocked to return null, so we just verify the component renders without errors
       expect(container).toBeInTheDocument();
     });

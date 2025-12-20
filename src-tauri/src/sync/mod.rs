@@ -179,10 +179,7 @@ pub fn resolve_conflict(original_path: &str) -> Result<ConflictResolution, SyncE
     let extension = path.extension().and_then(|s| s.to_str());
 
     // Get parent directory
-    let parent = path
-        .parent()
-        .and_then(|p| p.to_str())
-        .unwrap_or("");
+    let parent = path.parent().and_then(|p| p.to_str()).unwrap_or("");
 
     // Get hostname (PC name)
     let hostname = get_hostname()?;
@@ -197,10 +194,7 @@ pub fn resolve_conflict(original_path: &str) -> Result<ConflictResolution, SyncE
             file_stem, hostname, today, ext
         )
     } else {
-        format!(
-            "{} ({}'s conflicted copy {})",
-            file_stem, hostname, today
-        )
+        format!("{} ({}'s conflicted copy {})", file_stem, hostname, today)
     };
 
     // Build full path
@@ -229,7 +223,12 @@ mod tests {
     use super::*;
     use chrono::Duration;
 
-    fn create_file_info(path: &str, size: u64, modified: DateTime<Utc>, etag: Option<&str>) -> FileInfo {
+    fn create_file_info(
+        path: &str,
+        size: u64,
+        modified: DateTime<Utc>,
+        etag: Option<&str>,
+    ) -> FileInfo {
         FileInfo {
             path: path.to_string(),
             size,
@@ -311,8 +310,18 @@ mod tests {
         let now = Utc::now();
         let last_sync = now - Duration::hours(1);
 
-        let local = create_file_info("test.txt", 100, last_sync - Duration::minutes(30), Some("abc123"));
-        let remote = create_file_info("test.txt", 100, last_sync - Duration::minutes(30), Some("abc123"));
+        let local = create_file_info(
+            "test.txt",
+            100,
+            last_sync - Duration::minutes(30),
+            Some("abc123"),
+        );
+        let remote = create_file_info(
+            "test.txt",
+            100,
+            last_sync - Duration::minutes(30),
+            Some("abc123"),
+        );
 
         let result = compare_files(Some(&local), Some(&remote), Some(last_sync));
 
@@ -326,7 +335,12 @@ mod tests {
         let last_sync = now - Duration::hours(1);
 
         let local = create_file_info("test.txt", 100, now, Some("abc123"));
-        let remote = create_file_info("test.txt", 100, last_sync - Duration::minutes(30), Some("def456"));
+        let remote = create_file_info(
+            "test.txt",
+            100,
+            last_sync - Duration::minutes(30),
+            Some("def456"),
+        );
 
         let result = compare_files(Some(&local), Some(&remote), Some(last_sync));
 
@@ -338,7 +352,12 @@ mod tests {
         let now = Utc::now();
         let last_sync = now - Duration::hours(1);
 
-        let local = create_file_info("test.txt", 100, last_sync - Duration::minutes(30), Some("abc123"));
+        let local = create_file_info(
+            "test.txt",
+            100,
+            last_sync - Duration::minutes(30),
+            Some("abc123"),
+        );
         let remote = create_file_info("test.txt", 100, now, Some("def456"));
 
         let result = compare_files(Some(&local), Some(&remote), Some(last_sync));
@@ -406,7 +425,9 @@ mod tests {
         let result = resolve_conflict("documents/report.txt").expect("Failed to resolve conflict");
 
         assert_eq!(result.original_path, "documents/report.txt");
-        assert!(result.conflicted_copy_path.starts_with("documents/report ("));
+        assert!(result
+            .conflicted_copy_path
+            .starts_with("documents/report ("));
         assert!(result.conflicted_copy_path.contains("'s conflicted copy "));
         assert!(result.conflicted_copy_path.ends_with(").txt"));
     }
@@ -416,7 +437,9 @@ mod tests {
         let result = resolve_conflict("documents/README").expect("Failed to resolve conflict");
 
         assert_eq!(result.original_path, "documents/README");
-        assert!(result.conflicted_copy_path.starts_with("documents/README ("));
+        assert!(result
+            .conflicted_copy_path
+            .starts_with("documents/README ("));
         assert!(result.conflicted_copy_path.contains("'s conflicted copy "));
         assert!(!result.conflicted_copy_path.contains("."));
     }

@@ -27,13 +27,11 @@ fn test_file_metadata_content_type_handling() {
     let now = Utc::now();
 
     // コンテンツタイプありの場合
-    let metadata_with_ct = FileMetadata::new(
-        1024,
-        now,
-        Some("application/pdf".to_string()),
-        None,
+    let metadata_with_ct = FileMetadata::new(1024, now, Some("application/pdf".to_string()), None);
+    assert_eq!(
+        metadata_with_ct.content_type,
+        Some("application/pdf".to_string())
     );
-    assert_eq!(metadata_with_ct.content_type, Some("application/pdf".to_string()));
 
     // コンテンツタイプなしの場合
     let metadata_without_ct = FileMetadata::new(1024, now, None, None);
@@ -44,18 +42,8 @@ fn test_file_metadata_content_type_handling() {
 fn test_file_info_comparison() {
     // FileInfoの比較が正しく動作するか確認
     let now = Utc::now();
-    let file1 = FileInfo::new(
-        "test.txt".to_string(),
-        1024,
-        now,
-        Some("etag1".to_string()),
-    );
-    let file2 = FileInfo::new(
-        "test.txt".to_string(),
-        1024,
-        now,
-        Some("etag1".to_string()),
-    );
+    let file1 = FileInfo::new("test.txt".to_string(), 1024, now, Some("etag1".to_string()));
+    let file2 = FileInfo::new("test.txt".to_string(), 1024, now, Some("etag1".to_string()));
     let file3 = FileInfo::new(
         "test.txt".to_string(),
         2048, // サイズが異なる
