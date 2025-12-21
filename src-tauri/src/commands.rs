@@ -465,12 +465,17 @@ fn walk_directory(
 
             let modified_utc = chrono::DateTime::<chrono::Utc>::from(modified);
 
-            let file_info = FileInfo::new(
-                path_str,
-                metadata.len(),
-                modified_utc,
-                None, // ETag is not available for local files
-            );
+            // Calculate ETag (MD5 hash) for local files
+            // This matches AWS S3 ETag format for single-part uploads
+            let etag = if metadata.len() > 100 * 1024 * 1024 {
+                // Use buffered calculation for files larger than 100MB
+                crate::storage::metadata::calculate_md5_hash_buffered(&path).ok()
+            } else {
+                // Use standard calculation for smaller files
+                crate::storage::metadata::calculate_md5_hash(&path).ok()
+            };
+
+            let file_info = FileInfo::new(path_str, metadata.len(), modified_utc, etag);
 
             files.push(file_info);
         } else if metadata.is_dir() {

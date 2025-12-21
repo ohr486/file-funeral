@@ -88,24 +88,53 @@ pub fn compare_files(
     let state = match (local_info, remote_info, last_sync_time) {
         // Both exist - need to compare
         (Some(local), Some(remote), Some(last_sync)) => {
-            let local_modified_after_sync = local.last_modified > last_sync;
-            let remote_modified_after_sync = remote.last_modified > last_sync;
+            // Prioritize ETag-based comparison if both files have ETags
+            if let (Some(local_etag), Some(remote_etag)) = (&local.etag, &remote.etag) {
+                // ETag-based comparison
+                if local_etag == remote_etag && local.size == remote.size {
+                    // Files are identical (same ETag and size)
+                    SyncState::InSync
+                } else {
+                    // Files differ (different ETag or size)
+                    // Check which was modified since last sync
+                    let local_modified_after_sync = local.last_modified > last_sync;
+                    let remote_modified_after_sync = remote.last_modified > last_sync;
 
-            if local_modified_after_sync && remote_modified_after_sync {
-                // Both modified since last sync - conflict
-                SyncState::Conflict
-            } else if local_modified_after_sync {
-                // Only local modified - needs upload
-                SyncState::NeedsUpload
-            } else if remote_modified_after_sync {
-                // Only remote modified - needs download
-                SyncState::NeedsDownload
-            } else if files_are_identical(local, remote) {
-                // Neither modified, files identical
-                SyncState::InSync
+                    if local_modified_after_sync && remote_modified_after_sync {
+                        // Both modified since last sync - conflict
+                        SyncState::Conflict
+                    } else if local_modified_after_sync {
+                        // Only local modified - needs upload
+                        SyncState::NeedsUpload
+                    } else if remote_modified_after_sync {
+                        // Only remote modified - needs download
+                        SyncState::NeedsDownload
+                    } else {
+                        // Files differ but neither modified since sync - treat as conflict
+                        SyncState::Conflict
+                    }
+                }
             } else {
-                // Files differ but neither modified since sync - treat as conflict
-                SyncState::Conflict
+                // Fall back to timestamp-based comparison if ETags not available
+                let local_modified_after_sync = local.last_modified > last_sync;
+                let remote_modified_after_sync = remote.last_modified > last_sync;
+
+                if local_modified_after_sync && remote_modified_after_sync {
+                    // Both modified since last sync - conflict
+                    SyncState::Conflict
+                } else if local_modified_after_sync {
+                    // Only local modified - needs upload
+                    SyncState::NeedsUpload
+                } else if remote_modified_after_sync {
+                    // Only remote modified - needs download
+                    SyncState::NeedsDownload
+                } else if files_are_identical(local, remote) {
+                    // Neither modified, files identical
+                    SyncState::InSync
+                } else {
+                    // Files differ but neither modified since sync - treat as conflict
+                    SyncState::Conflict
+                }
             }
         }
         // Both exist but never synced before
@@ -562,6 +591,35 @@ mod tests {
         let result = compare_files(Some(&local), Some(&remote), Some(last_sync));
 
         assert_eq!(result.state, SyncState::Conflict);
+    }
+
+    #[test]
+    fn test_compare_files_same_etag_different_time() {
+        // CRITICAL TEST: ETag-based comparison ignores timestamp differences
+        // When both files have the same ETag and size, they should be InSync
+        // even if timestamps differ significantly
+        let now = Utc::now();
+        let last_sync = now - Duration::hours(1);
+
+        let local = create_file_info(
+            "test.txt",
+            100,
+            now - Duration::hours(2), // Old timestamp
+            Some("abc123"),
+        );
+        let remote = create_file_info(
+            "test.txt",
+            100,
+            now,            // Recent timestamp
+            Some("abc123"), // Same ETag
+        );
+
+        let result = compare_files(Some(&local), Some(&remote), Some(last_sync));
+
+        // Files have same ETag and size, so they should be InSync
+        // regardless of timestamp difference
+        assert_eq!(result.state, SyncState::InSync);
+        assert_eq!(result.path, "test.txt");
     }
 
     #[test]

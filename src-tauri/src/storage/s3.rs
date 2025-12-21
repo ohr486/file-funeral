@@ -153,7 +153,8 @@ impl CloudStorageProvider for S3Provider {
                                 chrono::DateTime::from_timestamp(secs, nanos)
                             })
                             .unwrap_or_else(Utc::now);
-                        let etag = object.e_tag().map(|s| s.to_string());
+                        // AWS S3 ETag is surrounded by quotes, remove them to match local MD5 hash format
+                        let etag = object.e_tag().map(|s| s.trim_matches('"').to_string());
 
                         file_list.push(FileInfo::new(key.to_string(), size, last_modified, etag));
                     }
@@ -214,7 +215,8 @@ impl CloudStorageProvider for S3Provider {
             })
             .unwrap_or_else(Utc::now);
         let content_type = response.content_type().map(|s| s.to_string());
-        let etag = response.e_tag().map(|s| s.to_string());
+        // AWS S3 ETag is surrounded by quotes, remove them to match local MD5 hash format
+        let etag = response.e_tag().map(|s| s.trim_matches('"').to_string());
 
         Ok(FileMetadata::new(size, last_modified, content_type, etag))
     }

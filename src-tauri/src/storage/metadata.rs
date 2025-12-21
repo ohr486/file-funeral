@@ -1,7 +1,7 @@
 //! File metadata management module
 //!
 //! This module provides functionality for:
-//! - Calculating CRC32 checksums of files
+//! - Calculating MD5 checksums of files (compatible with AWS S3 ETag)
 //! - Extracting file metadata (size, modification time, checksum)
 //! - Comparing file metadata to determine sync requirements
 
@@ -12,32 +12,32 @@ use std::path::Path;
 
 use super::{FileInfo, FileMetadata, Result, StorageError};
 
-/// Calculate CRC32 checksum of a file
+/// Calculate MD5 checksum of a file
 ///
-/// This function reads the entire file and computes its CRC32 checksum.
-/// CRC32 is faster than MD5 and sufficient for file integrity checking.
+/// This function reads the entire file and computes its MD5 checksum.
+/// MD5 is used to match AWS S3 ETag format for file integrity checking.
 ///
 /// # Arguments
 /// * `file_path` - Path to the file
 ///
 /// # Returns
-/// * `Ok(String)` - Hexadecimal CRC32 checksum string (8 characters)
+/// * `Ok(String)` - Hexadecimal MD5 checksum string (32 characters)
 /// * `Err(StorageError)` - If file cannot be read
 ///
 /// # Example
 /// ```no_run
-/// use app_lib::storage::metadata::calculate_crc32_hash;
+/// use app_lib::storage::metadata::calculate_md5_hash;
 ///
-/// let hash = calculate_crc32_hash("/path/to/file.txt").unwrap();
-/// println!("CRC32: {}", hash);
+/// let hash = calculate_md5_hash("/path/to/file.txt").unwrap();
+/// println!("MD5: {}", hash);
 /// ```
-pub fn calculate_crc32_hash<P: AsRef<Path>>(file_path: P) -> Result<String> {
+pub fn calculate_md5_hash<P: AsRef<Path>>(file_path: P) -> Result<String> {
     let path = file_path.as_ref();
     let mut file = fs::File::open(path).map_err(|e| {
         StorageError::Io(io::Error::new(
             e.kind(),
             format!(
-                "Failed to open file for CRC32 calculation: {}",
+                "Failed to open file for MD5 calculation: {}",
                 path.display()
             ),
         ))
@@ -48,17 +48,17 @@ pub fn calculate_crc32_hash<P: AsRef<Path>>(file_path: P) -> Result<String> {
         StorageError::Io(io::Error::new(
             e.kind(),
             format!(
-                "Failed to read file for CRC32 calculation: {}",
+                "Failed to read file for MD5 calculation: {}",
                 path.display()
             ),
         ))
     })?;
 
-    let checksum = crc32fast::hash(&buffer);
-    Ok(format!("{:08x}", checksum))
+    let digest = md5::compute(&buffer);
+    Ok(format!("{:x}", digest))
 }
 
-/// Calculate CRC32 checksum of a file using buffered reading
+/// Calculate MD5 checksum of a file using buffered reading
 ///
 /// This is more memory-efficient for large files as it reads the file
 /// in chunks rather than loading the entire file into memory.
@@ -67,21 +67,21 @@ pub fn calculate_crc32_hash<P: AsRef<Path>>(file_path: P) -> Result<String> {
 /// * `file_path` - Path to the file
 ///
 /// # Returns
-/// * `Ok(String)` - Hexadecimal CRC32 checksum string (8 characters)
+/// * `Ok(String)` - Hexadecimal MD5 checksum string (32 characters)
 /// * `Err(StorageError)` - If file cannot be read
-pub fn calculate_crc32_hash_buffered<P: AsRef<Path>>(file_path: P) -> Result<String> {
+pub fn calculate_md5_hash_buffered<P: AsRef<Path>>(file_path: P) -> Result<String> {
     let path = file_path.as_ref();
     let mut file = fs::File::open(path).map_err(|e| {
         StorageError::Io(io::Error::new(
             e.kind(),
             format!(
-                "Failed to open file for buffered CRC32 calculation: {}",
+                "Failed to open file for buffered MD5 calculation: {}",
                 path.display()
             ),
         ))
     })?;
 
-    let mut hasher = crc32fast::Hasher::new();
+    let mut context = md5::Context::new();
     let mut buffer = [0u8; 8192]; // 8KB buffer
 
     loop {
@@ -89,7 +89,7 @@ pub fn calculate_crc32_hash_buffered<P: AsRef<Path>>(file_path: P) -> Result<Str
             StorageError::Io(io::Error::new(
                 e.kind(),
                 format!(
-                    "Failed to read file for buffered CRC32 calculation: {}",
+                    "Failed to read file for buffered MD5 calculation: {}",
                     path.display()
                 ),
             ))
@@ -99,11 +99,11 @@ pub fn calculate_crc32_hash_buffered<P: AsRef<Path>>(file_path: P) -> Result<Str
             break;
         }
 
-        hasher.update(&buffer[..bytes_read]);
+        context.consume(&buffer[..bytes_read]);
     }
 
-    let checksum = hasher.finalize();
-    Ok(format!("{:08x}", checksum))
+    let digest = context.compute();
+    Ok(format!("{:x}", digest))
 }
 
 /// Get file metadata from local filesystem
@@ -111,9 +111,9 @@ pub fn calculate_crc32_hash_buffered<P: AsRef<Path>>(file_path: P) -> Result<Str
 /// This function extracts metadata from a local file, including:
 /// - File size
 /// - Last modified time
-/// - CRC32 checksum
+/// - MD5 checksum
 ///
-/// For files larger than 100MB, it uses buffered CRC32 calculation
+/// For files larger than 100MB, it uses buffered MD5 calculation
 /// to avoid loading the entire file into memory.
 ///
 /// # Arguments
@@ -148,12 +148,12 @@ pub fn get_local_file_metadata<P: AsRef<Path>>(file_path: P) -> Result<FileMetad
 
     let last_modified: DateTime<Utc> = modified.into();
 
-    // Calculate CRC32 checksum
+    // Calculate MD5 checksum
     // Use buffered calculation for files larger than 100MB
     let hash = if size > 100 * 1024 * 1024 {
-        calculate_crc32_hash_buffered(path)?
+        calculate_md5_hash_buffered(path)?
     } else {
-        calculate_crc32_hash(path)?
+        calculate_md5_hash(path)?
     };
 
     Ok(FileMetadata::new(
@@ -197,60 +197,60 @@ mod tests {
     use tempfile::NamedTempFile;
 
     #[test]
-    fn test_calculate_crc32_hash() {
+    fn test_calculate_md5_hash() {
         // Create a temporary file with known content
         let mut temp_file = NamedTempFile::new().unwrap();
         temp_file.write_all(b"Hello, World!").unwrap();
         temp_file.flush().unwrap();
 
-        let hash = calculate_crc32_hash(temp_file.path()).unwrap();
+        let hash = calculate_md5_hash(temp_file.path()).unwrap();
 
-        // CRC32 checksum of "Hello, World!" is "ec4ac3d0"
-        assert_eq!(hash, "ec4ac3d0");
+        // MD5 checksum of "Hello, World!" is "65a8e27d8879283831b664bd8b7f0ad4"
+        assert_eq!(hash, "65a8e27d8879283831b664bd8b7f0ad4");
     }
 
     #[test]
-    fn test_calculate_crc32_hash_buffered() {
+    fn test_calculate_md5_hash_buffered() {
         // Create a temporary file with known content
         let mut temp_file = NamedTempFile::new().unwrap();
         temp_file.write_all(b"Hello, World!").unwrap();
         temp_file.flush().unwrap();
 
-        let hash = calculate_crc32_hash_buffered(temp_file.path()).unwrap();
+        let hash = calculate_md5_hash_buffered(temp_file.path()).unwrap();
 
         // Should produce the same hash as non-buffered version
-        assert_eq!(hash, "ec4ac3d0");
+        assert_eq!(hash, "65a8e27d8879283831b664bd8b7f0ad4");
     }
 
     #[test]
-    fn test_calculate_crc32_hash_large_content() {
+    fn test_calculate_md5_hash_large_content() {
         // Create a file with content larger than the buffer size (8KB)
         let mut temp_file = NamedTempFile::new().unwrap();
         let large_content = vec![b'A'; 20_000]; // 20KB
         temp_file.write_all(&large_content).unwrap();
         temp_file.flush().unwrap();
 
-        let hash_normal = calculate_crc32_hash(temp_file.path()).unwrap();
-        let hash_buffered = calculate_crc32_hash_buffered(temp_file.path()).unwrap();
+        let hash_normal = calculate_md5_hash(temp_file.path()).unwrap();
+        let hash_buffered = calculate_md5_hash_buffered(temp_file.path()).unwrap();
 
         // Both methods should produce the same hash
         assert_eq!(hash_normal, hash_buffered);
     }
 
     #[test]
-    fn test_calculate_crc32_hash_empty_file() {
+    fn test_calculate_md5_hash_empty_file() {
         // Create an empty temporary file
         let temp_file = NamedTempFile::new().unwrap();
 
-        let hash = calculate_crc32_hash(temp_file.path()).unwrap();
+        let hash = calculate_md5_hash(temp_file.path()).unwrap();
 
-        // CRC32 checksum of empty file is "00000000"
-        assert_eq!(hash, "00000000");
+        // MD5 checksum of empty file is "d41d8cd98f00b204e9800998ecf8427e"
+        assert_eq!(hash, "d41d8cd98f00b204e9800998ecf8427e");
     }
 
     #[test]
-    fn test_calculate_crc32_hash_nonexistent_file() {
-        let result = calculate_crc32_hash("/nonexistent/file.txt");
+    fn test_calculate_md5_hash_nonexistent_file() {
+        let result = calculate_md5_hash("/nonexistent/file.txt");
         assert!(result.is_err());
 
         match result {
@@ -270,7 +270,7 @@ mod tests {
 
         assert_eq!(metadata.size, 12); // "Test content" is 12 bytes
         assert!(metadata.etag.is_some());
-        assert_eq!(metadata.etag.unwrap(), "4fc5bca5"); // CRC32 of "Test content"
+        assert_eq!(metadata.etag.unwrap(), "8bfa8e0684108f419933a5995264d150"); // MD5 of "Test content"
         assert!(metadata.last_modified <= Utc::now());
     }
 
@@ -319,8 +319,8 @@ mod tests {
         temp_file1.flush().unwrap();
         temp_file2.flush().unwrap();
 
-        let hash1 = calculate_crc32_hash(temp_file1.path()).unwrap();
-        let hash2 = calculate_crc32_hash(temp_file2.path()).unwrap();
+        let hash1 = calculate_md5_hash(temp_file1.path()).unwrap();
+        let hash2 = calculate_md5_hash(temp_file2.path()).unwrap();
 
         // Files with identical content should have identical hashes
         assert_eq!(hash1, hash2);
@@ -337,8 +337,8 @@ mod tests {
         temp_file1.flush().unwrap();
         temp_file2.flush().unwrap();
 
-        let hash1 = calculate_crc32_hash(temp_file1.path()).unwrap();
-        let hash2 = calculate_crc32_hash(temp_file2.path()).unwrap();
+        let hash1 = calculate_md5_hash(temp_file1.path()).unwrap();
+        let hash2 = calculate_md5_hash(temp_file2.path()).unwrap();
 
         // Files with different content should have different hashes
         assert_ne!(hash1, hash2);

@@ -1,14 +1,13 @@
 //! Authentication credential management module
 //!
 //! This module handles secure storage and retrieval of cloud provider credentials
-//! using OS-native keychain services (macOS Keychain, Windows Credential Manager,
-//! Linux Secret Service API) via the `keyring` crate.
+//! using file-based storage with appropriate permissions.
 //!
-//! In development mode (debug builds), credentials are stored in a JSON file:
+//! Credentials are stored in a JSON file:
 //! - Production: ~/.{service-name}/credentials.json (e.g., ~/.file-funeral/credentials.json)
 //! - Test: /tmp/.{service-name}/credentials.json (e.g., /tmp/.file-funeral-test/credentials.json)
 //!
-//! This is for compatibility with Tauri's hot-reload and to avoid polluting home directory during tests.
+//! The file is created with permissions 600 (owner read/write only) for security.
 //!
 //! It also supports fallback to environment variables for development purposes.
 
@@ -147,71 +146,47 @@ impl CredentialManager {
         Ok(credentials)
     }
 
-    /// Save AWS credentials to the OS keychain or file (development mode)
+    /// Save AWS credentials to file
     ///
-    /// In development mode (debug builds):
-    /// - Production: ~/.{service-name}/credentials.json
-    /// - Test: /tmp/.{service-name}/credentials.json
+    /// Credentials are stored in:
+    /// - Production: ~/.{service-name}/credentials.json (e.g., ~/.file-funeral/credentials.json)
+    /// - Test: /tmp/.{service-name}/credentials.json (e.g., /tmp/.file-funeral-test/credentials.json)
     ///
-    /// In release mode, each credential component is stored separately in the keychain for security.
-    /// The keys are named: "aws_access_key_id", "aws_secret_access_key", "aws_region", "s3_bucket_name"
+    /// The file is created with permissions 600 (owner read/write only) for security.
     pub fn save_aws_credentials(
         &self,
         credentials: &AwsCredentials,
     ) -> Result<(), CredentialError> {
-        #[cfg(debug_assertions)]
-        {
-            log::info!("Development mode: using file-based credential storage");
-            self.save_to_file(credentials)
-        }
-
-        #[cfg(not(debug_assertions))]
-        {
-            log::info!("Release mode: using OS keychain");
-            // Save each component separately
-            self.set_credential("aws_access_key_id", &credentials.access_key_id)?;
-            self.set_credential("aws_secret_access_key", &credentials.secret_access_key)?;
-            self.set_credential("aws_region", &credentials.region)?;
-            self.set_credential("s3_bucket_name", &credentials.bucket_name)?;
-            Ok(())
-        }
+        log::info!("Using file-based credential storage");
+        self.save_to_file(credentials)
     }
 
-    /// Load AWS credentials from the OS keychain or file (development mode)
+    /// Load AWS credentials from file
     ///
-    /// In development mode (debug builds), credentials are loaded from:
-    /// - Production: ~/.{service-name}/credentials.json
-    /// - Test: /tmp/.{service-name}/credentials.json
+    /// Credentials are loaded from:
+    /// - Production: ~/.{service-name}/credentials.json (e.g., ~/.file-funeral/credentials.json)
+    /// - Test: /tmp/.{service-name}/credentials.json (e.g., /tmp/.file-funeral-test/credentials.json)
     ///
-    /// In release mode, if any credential is not found in the keychain, falls back to environment variables.
-    ///
-    /// Environment variable fallbacks:
+    /// If the file is not found, falls back to environment variables:
     /// - AWS_ACCESS_KEY_ID
     /// - AWS_SECRET_ACCESS_KEY
     /// - AWS_REGION (defaults to "us-east-1" if not set)
     /// - S3_BUCKET_NAME
     pub fn load_aws_credentials(&self) -> Result<AwsCredentials, CredentialError> {
-        #[cfg(debug_assertions)]
-        {
-            log::info!("Development mode: using file-based credential storage");
-            // Try file first, then fall back to environment variables
-            match self.load_from_file() {
-                Ok(credentials) => return Ok(credentials),
-                Err(e) => {
-                    log::warn!(
-                        "Failed to load from file: {}, trying environment variables",
-                        e
-                    );
-                }
+        log::info!("Using file-based credential storage");
+
+        // Try file first, then fall back to environment variables
+        match self.load_from_file() {
+            Ok(credentials) => return Ok(credentials),
+            Err(e) => {
+                log::warn!(
+                    "Failed to load from file: {}, trying environment variables",
+                    e
+                );
             }
         }
 
-        #[cfg(not(debug_assertions))]
-        {
-            log::info!("Release mode: using OS keychain");
-        }
-
-        // Fall back to keychain/environment variables
+        // Fall back to environment variables
         let access_key_id =
             self.get_credential_with_env_fallback("aws_access_key_id", "AWS_ACCESS_KEY_ID")?;
         let secret_access_key = self
@@ -230,7 +205,7 @@ impl CredentialManager {
         })
     }
 
-    /// Delete credentials from file (development mode)
+    /// Delete credentials from file
     fn delete_from_file(&self) -> Result<(), CredentialError> {
         let file_path = Self::get_credentials_file_path(&self.service_name)?;
         if file_path.exists() {
@@ -240,25 +215,10 @@ impl CredentialManager {
         Ok(())
     }
 
-    /// Delete AWS credentials from the OS keychain or file (development mode)
+    /// Delete AWS credentials from file
     pub fn delete_aws_credentials(&self) -> Result<(), CredentialError> {
-        #[cfg(debug_assertions)]
-        {
-            log::info!("Development mode: deleting file-based credentials");
-            let _ = self.delete_from_file();
-        }
-
-        #[cfg(not(debug_assertions))]
-        {
-            log::info!("Release mode: deleting keychain credentials");
-        }
-
-        // Try to delete each credential from keychain, but don't fail if they don't exist
-        let _ = self.delete_credential("aws_access_key_id");
-        let _ = self.delete_credential("aws_secret_access_key");
-        let _ = self.delete_credential("aws_region");
-        let _ = self.delete_credential("s3_bucket_name");
-        Ok(())
+        log::info!("Deleting file-based credentials");
+        self.delete_from_file()
     }
 
     /// Check if AWS credentials exist in the keychain or environment

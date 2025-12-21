@@ -48,7 +48,8 @@ pub struct FileInfo {
     /// 最終更新日時
     pub last_modified: DateTime<Utc>,
 
-    /// ETag（エンティティタグ、ファイルのチェックサム：CRC32）
+    /// ETag（エンティティタグ、ファイルのチェックサム：MD5）
+    /// AWS S3のETagと一致する形式
     pub etag: Option<String>,
 }
 
@@ -70,7 +71,7 @@ impl FileInfo {
 
     /// 2つのファイルの内容が同じかどうかを判定
     ///
-    /// ファイルサイズとETag（CRC32チェックサム）を比較します。
+    /// ファイルサイズとETag（MD5チェックサム）を比較します。
     /// ETagが両方とも存在する場合はETagで比較し、それ以外はサイズのみで比較します。
     ///
     /// # Arguments
@@ -109,10 +110,17 @@ impl FileInfo {
 
     /// 同期が必要かどうかを判定
     ///
-    /// 以下のいずれかに該当する場合、同期が必要と判定します:
-    /// 1. ファイルサイズが異なる
-    /// 2. ETag（CRC32チェックサム）が異なる
-    /// 3. 最終更新日時が異なる（秒単位で比較、ファイルシステムの精度を考慮）
+    /// ETag（MD5チェックサム）がある場合、ETagとサイズで判定します。
+    /// ETagがない場合は、サイズと最終更新日時で判定します（後方互換性のため）。
+    ///
+    /// ETagがある場合:
+    /// 1. ファイルサイズが異なる → 同期必要
+    /// 2. ETagが異なる → 同期必要
+    /// 3. サイズとETagが同じ → 同期不要（更新日時は無視）
+    ///
+    /// ETagがない場合:
+    /// 1. ファイルサイズが異なる → 同期必要
+    /// 2. 最終更新日時が異なる（秒単位で比較） → 同期必要
     ///
     /// # Arguments
     /// * `other` - 比較対象のFileInfo
@@ -126,22 +134,15 @@ impl FileInfo {
             return true;
         }
 
-        // ETagが両方存在する場合はETagで比較
+        // ETagが両方存在する場合はETagのみで判定（更新日時は無視）
         if let (Some(etag1), Some(etag2)) = (&self.etag, &other.etag) {
-            if etag1 != etag2 {
-                return true;
-            }
+            return etag1 != etag2;
         }
 
-        // 最終更新日時が異なれば同期が必要
+        // ETagがない場合は最終更新日時で判定（後方互換性のため）
         // ファイルシステムの時刻精度を考慮して秒単位で比較
         let diff = (self.last_modified.timestamp() - other.last_modified.timestamp()).abs();
-        if diff > 1 {
-            return true;
-        }
-
-        // 全て同じなら同期不要
-        false
+        diff > 1
     }
 }
 
@@ -157,7 +158,8 @@ pub struct FileMetadata {
     /// コンテンツタイプ（MIMEタイプ）
     pub content_type: Option<String>,
 
-    /// ETag（エンティティタグ、ファイルのチェックサム：CRC32）
+    /// ETag（エンティティタグ、ファイルのチェックサム：MD5）
+    /// AWS S3のETagと一致する形式
     pub etag: Option<String>,
 }
 
@@ -583,6 +585,30 @@ mod tests {
         );
 
         // 1秒以内の差は許容範囲（ファイルシステムの精度を考慮）
+        assert!(!file1.needs_sync(&file2));
+    }
+
+    #[test]
+    fn test_needs_sync_same_etag_different_time() {
+        // CRITICAL TEST: ETag takes priority over timestamp
+        // When both files have the same ETag, timestamp differences should be IGNORED
+        let time1 = Utc.with_ymd_and_hms(2025, 12, 17, 10, 0, 0).unwrap();
+        let time2 = Utc.with_ymd_and_hms(2025, 12, 17, 11, 0, 0).unwrap(); // 1 hour difference
+
+        let file1 = FileInfo::new(
+            "file.txt".to_string(),
+            1024,
+            time1,
+            Some("etag123".to_string()),
+        );
+        let file2 = FileInfo::new(
+            "file.txt".to_string(),
+            1024,
+            time2,
+            Some("etag123".to_string()),
+        );
+
+        // Same ETag and size means files are identical, even with different timestamps
         assert!(!file1.needs_sync(&file2));
     }
 
