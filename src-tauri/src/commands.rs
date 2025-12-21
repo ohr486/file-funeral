@@ -155,6 +155,8 @@ pub struct ComparisonResultDto {
     pub remote_size: Option<u64>,
     pub local_modified: Option<String>,
     pub remote_modified: Option<String>,
+    pub local_etag: Option<String>,
+    pub remote_etag: Option<String>,
 }
 
 impl From<ComparisonResult> for ComparisonResultDto {
@@ -172,6 +174,14 @@ impl From<ComparisonResult> for ComparisonResultDto {
                 .remote_info
                 .as_ref()
                 .map(|info| info.last_modified.to_rfc3339()),
+            local_etag: result
+                .local_info
+                .as_ref()
+                .and_then(|info| info.etag.clone()),
+            remote_etag: result
+                .remote_info
+                .as_ref()
+                .and_then(|info| info.etag.clone()),
         }
     }
 }

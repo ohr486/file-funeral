@@ -95,20 +95,22 @@ const formatDate = (dateString?: string): string => {
 const getTooltipContent = (file: ComparisonResultDto): string => {
   const localModified = file.local_modified ? formatDate(file.local_modified) : "-";
   const remoteModified = file.remote_modified ? formatDate(file.remote_modified) : "-";
+  const localEtag = file.local_etag || "-";
+  const remoteEtag = file.remote_etag || "-";
 
   switch (file.state) {
     case SyncState.InSync:
-      return `ローカルとクラウドが一致しています\n最終同期: ${localModified}`;
+      return `ローカルとクラウドが一致しています\n最終同期: ${localModified}\nETag: ${localEtag}`;
     case SyncState.NeedsUpload:
-      return `ローカルが新しいファイルです\nローカル: ${localModified}\nクラウド: ${remoteModified}\n次回同期でアップロードされます`;
+      return `ローカルが新しいファイルです\nローカル: ${localModified} (${localEtag})\nクラウド: ${remoteModified} (${remoteEtag})\n次回同期でアップロードされます`;
     case SyncState.NeedsDownload:
-      return `クラウドが新しいファイルです\nローカル: ${localModified}\nクラウド: ${remoteModified}\n次回同期でダウンロードされます`;
+      return `クラウドが新しいファイルです\nローカル: ${localModified} (${localEtag})\nクラウド: ${remoteModified} (${remoteEtag})\n次回同期でダウンロードされます`;
     case SyncState.Conflict:
-      return `両方で異なる変更が行われています\nローカル: ${localModified}\nクラウド: ${remoteModified}\n同期時に両方保存されます`;
+      return `両方で異なる変更が行われています\nローカル: ${localModified} (${localEtag})\nクラウド: ${remoteModified} (${remoteEtag})\n同期時に両方保存されます`;
     case SyncState.PendingLocalDeletion:
-      return `ローカルで削除されました\nローカル: ${localModified}\nクラウド: ${remoteModified}\n次回同期でクラウドからも削除されます`;
+      return `ローカルで削除されました\nローカル: ${localModified} (${localEtag})\nクラウド: ${remoteModified} (${remoteEtag})\n次回同期でクラウドからも削除されます`;
     case SyncState.PendingRemoteDeletion:
-      return `クラウドで削除されました\nローカル: ${localModified}\nクラウド: ${remoteModified}\n次回同期でローカルからも削除されます`;
+      return `クラウドで削除されました\nローカル: ${localModified} (${localEtag})\nクラウド: ${remoteModified} (${remoteEtag})\n次回同期でローカルからも削除されます`;
     default:
       return "";
   }
@@ -229,6 +231,8 @@ export function FileList({ files }: FileListProps) {
               </TableHead>
               <TableHead>Local Modified</TableHead>
               <TableHead>Remote Modified</TableHead>
+              <TableHead>Local ETag</TableHead>
+              <TableHead>Remote ETag</TableHead>
               <TableHead>
                 <button
                   className="flex items-center gap-1 hover:underline"
@@ -243,7 +247,7 @@ export function FileList({ files }: FileListProps) {
           <TableBody>
             {filteredAndSortedFiles.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} className="text-center text-muted-foreground">
+                <TableCell colSpan={8} className="text-center text-muted-foreground">
                   No files found
                 </TableCell>
               </TableRow>
@@ -288,6 +292,12 @@ export function FileList({ files }: FileListProps) {
                           </TableCell>
                           <TableCell style={{ color: textColor }}>
                             {formatDate(file.remote_modified)}
+                          </TableCell>
+                          <TableCell style={{ color: textColor }}>
+                            <code className="text-xs">{file.local_etag || "-"}</code>
+                          </TableCell>
+                          <TableCell style={{ color: textColor }}>
+                            <code className="text-xs">{file.remote_etag || "-"}</code>
                           </TableCell>
                           <TableCell>{getSyncStateBadge(file.state)}</TableCell>
                         </TableRow>
