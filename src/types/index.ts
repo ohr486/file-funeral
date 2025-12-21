@@ -23,6 +23,8 @@ export interface ComparisonResultDto {
   remote_size?: number;
   local_modified?: string;
   remote_modified?: string;
+  local_etag?: string;
+  remote_etag?: string;
 }
 
 export interface SyncStatusResponse {

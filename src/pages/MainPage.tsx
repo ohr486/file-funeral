@@ -17,7 +17,6 @@ export function MainPage({ onSettingsClick }: MainPageProps) {
   const [remotePrefix, setRemotePrefix] = useState("");
   const [syncStatus, setSyncStatus] = useState<SyncStatusResponse | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [hasSynced, setHasSynced] = useState(false);
 
   // Load saved folder path on component mount
   useEffect(() => {
@@ -93,7 +92,6 @@ export function MainPage({ onSettingsClick }: MainPageProps) {
   };
 
   const handleSyncComplete = () => {
-    setHasSynced(true);
     loadSyncStatus();
   };
 
@@ -167,29 +165,25 @@ export function MainPage({ onSettingsClick }: MainPageProps) {
 
         {/* Sync status summary */}
         {syncStatus && (
-          <div className={`grid gap-4 ${hasSynced ? "grid-cols-2" : "grid-cols-2 md:grid-cols-4"}`}>
+          <div className="grid gap-4 grid-cols-2 md:grid-cols-4">
             <div className="p-4 border rounded-lg bg-card">
               <div className="text-2xl font-bold text-green-600">
                 {syncStatus.in_sync_count}
               </div>
               <div className="text-sm text-muted-foreground">In Sync</div>
             </div>
-            {!hasSynced && (
-              <>
-                <div className="p-4 border rounded-lg bg-card">
-                  <div className="text-2xl font-bold text-blue-600">
-                    {syncStatus.needs_upload_count}
-                  </div>
-                  <div className="text-sm text-muted-foreground">Needs Upload</div>
-                </div>
-                <div className="p-4 border rounded-lg bg-card">
-                  <div className="text-2xl font-bold text-blue-600">
-                    {syncStatus.needs_download_count}
-                  </div>
-                  <div className="text-sm text-muted-foreground">Needs Download</div>
-                </div>
-              </>
-            )}
+            <div className="p-4 border rounded-lg bg-card">
+              <div className="text-2xl font-bold text-blue-600">
+                {syncStatus.needs_upload_count}
+              </div>
+              <div className="text-sm text-muted-foreground">Needs Upload</div>
+            </div>
+            <div className="p-4 border rounded-lg bg-card">
+              <div className="text-2xl font-bold text-blue-600">
+                {syncStatus.needs_download_count}
+              </div>
+              <div className="text-sm text-muted-foreground">Needs Download</div>
+            </div>
             <div className="p-4 border rounded-lg bg-card">
               <div className="text-2xl font-bold text-red-600">
                 {syncStatus.conflict_count}
@@ -201,16 +195,7 @@ export function MainPage({ onSettingsClick }: MainPageProps) {
 
         {/* File list */}
         {syncStatus && syncStatus.comparisons.length > 0 ? (
-          <FileList
-            files={
-              hasSynced
-                ? syncStatus.comparisons.filter(
-                    (file) =>
-                      file.state === "InSync" || file.state === "Conflict"
-                  )
-                : syncStatus.comparisons
-            }
-          />
+          <FileList files={syncStatus.comparisons} />
         ) : (
           <div className="p-12 border rounded-lg bg-card text-center text-muted-foreground">
             {localPath
