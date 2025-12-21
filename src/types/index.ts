@@ -2,9 +2,13 @@
 
 export enum SyncState {
   InSync = "InSync",
+  Syncing = "Syncing",
   NeedsUpload = "NeedsUpload",
   NeedsDownload = "NeedsDownload",
   Conflict = "Conflict",
+  Error = "Error",
+  Excluded = "Excluded",
+  PendingDelete = "PendingDelete",
 }
 
 export interface FileInfo {

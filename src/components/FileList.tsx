@@ -1,9 +1,13 @@
 import { useState, useMemo } from "react";
 import {
   CheckCircle2,
-  Upload,
-  Download,
+  ArrowUp,
+  ArrowDown,
   AlertTriangle,
+  XCircle,
+  Ban,
+  Trash2,
+  Loader2,
   File,
   ArrowUpDown,
 } from "lucide-react";
@@ -17,6 +21,12 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { ComparisonResultDto, SyncState } from "@/types";
 
 interface FileListProps {
@@ -29,13 +39,21 @@ type SortOrder = "asc" | "desc";
 const getSyncStateIcon = (state: SyncState) => {
   switch (state) {
     case SyncState.InSync:
-      return <CheckCircle2 className="h-4 w-4 text-green-500" />;
+      return <CheckCircle2 className="h-4 w-4" style={{ color: "#22c55e" }} />;
+    case SyncState.Syncing:
+      return <Loader2 className="h-4 w-4 animate-spin" style={{ color: "#3b82f6" }} />;
     case SyncState.NeedsUpload:
-      return <Upload className="h-4 w-4 text-blue-500" />;
+      return <ArrowUp className="h-4 w-4" style={{ color: "#f59e0b" }} />;
     case SyncState.NeedsDownload:
-      return <Download className="h-4 w-4 text-blue-500" />;
+      return <ArrowDown className="h-4 w-4" style={{ color: "#f59e0b" }} />;
     case SyncState.Conflict:
-      return <AlertTriangle className="h-4 w-4 text-red-500" />;
+      return <AlertTriangle className="h-4 w-4" style={{ color: "#eab308" }} />;
+    case SyncState.Error:
+      return <XCircle className="h-4 w-4" style={{ color: "#ef4444" }} />;
+    case SyncState.Excluded:
+      return <Ban className="h-4 w-4" style={{ color: "#9ca3af" }} />;
+    case SyncState.PendingDelete:
+      return <Trash2 className="h-4 w-4" style={{ color: "#6b7280" }} />;
     default:
       return <File className="h-4 w-4 text-gray-400" />;
   }
@@ -44,15 +62,23 @@ const getSyncStateIcon = (state: SyncState) => {
 const getSyncStateBadge = (state: SyncState) => {
   switch (state) {
     case SyncState.InSync:
-      return <Badge variant="default">In Sync</Badge>;
+      return <Badge className="bg-green-500 hover:bg-green-600">同期済み</Badge>;
+    case SyncState.Syncing:
+      return <Badge className="bg-blue-500 hover:bg-blue-600">同期中</Badge>;
     case SyncState.NeedsUpload:
-      return <Badge variant="default">Needs Upload</Badge>;
+      return <Badge className="bg-orange-500 hover:bg-orange-600">アップロード待ち</Badge>;
     case SyncState.NeedsDownload:
-      return <Badge variant="default">Needs Download</Badge>;
+      return <Badge className="bg-orange-500 hover:bg-orange-600">ダウンロード待ち</Badge>;
     case SyncState.Conflict:
-      return <Badge variant="destructive">Conflict</Badge>;
+      return <Badge className="bg-yellow-500 hover:bg-yellow-600">競合</Badge>;
+    case SyncState.Error:
+      return <Badge className="bg-red-500 hover:bg-red-600">エラー</Badge>;
+    case SyncState.Excluded:
+      return <Badge className="bg-gray-500 hover:bg-gray-600">除外</Badge>;
+    case SyncState.PendingDelete:
+      return <Badge className="bg-gray-600 hover:bg-gray-700">削除待ち</Badge>;
     default:
-      return <Badge variant="outline">Unknown</Badge>;
+      return <Badge variant="outline">不明</Badge>;
   }
 };
 
@@ -74,6 +100,32 @@ const formatDate = (dateString?: string): string => {
     return date.toLocaleString();
   } catch {
     return "-";
+  }
+};
+
+const getTooltipContent = (file: ComparisonResultDto): string => {
+  const localModified = file.local_modified ? formatDate(file.local_modified) : "-";
+  const remoteModified = file.remote_modified ? formatDate(file.remote_modified) : "-";
+
+  switch (file.state) {
+    case SyncState.InSync:
+      return `ローカルとクラウドが一致しています\n最終同期: ${localModified}`;
+    case SyncState.Syncing:
+      return `ファイルを同期中です...`;
+    case SyncState.NeedsUpload:
+      return `ローカルが新しいファイルです\nローカル: ${localModified}\nクラウド: ${remoteModified}\n次回同期でアップロードされます`;
+    case SyncState.NeedsDownload:
+      return `クラウドが新しいファイルです\nローカル: ${localModified}\nクラウド: ${remoteModified}\n次回同期でダウンロードされます`;
+    case SyncState.Conflict:
+      return `両方で異なる変更が行われています\nローカル: ${localModified}\nクラウド: ${remoteModified}\n同期時に両方保存されます`;
+    case SyncState.Error:
+      return `同期に失敗しました\n「再試行」ボタンで再度同期を試みる`;
+    case SyncState.Excluded:
+      return `同期対象外のファイルです`;
+    case SyncState.PendingDelete:
+      return `ローカルで削除されました\n削除日時: ${localModified}\n「復元」で取り消せます`;
+    default:
+      return "";
   }
 };
 
@@ -154,11 +206,15 @@ export function FileList({ files }: FileListProps) {
           value={filterState}
           onChange={(e) => setFilterState(e.target.value as SyncState | "all")}
         >
-          <option value="all">All Files</option>
-          <option value={SyncState.InSync}>In Sync</option>
-          <option value={SyncState.NeedsUpload}>Needs Upload</option>
-          <option value={SyncState.NeedsDownload}>Needs Download</option>
-          <option value={SyncState.Conflict}>Conflict</option>
+          <option value="all">すべて</option>
+          <option value={SyncState.InSync}>同期済み</option>
+          <option value={SyncState.Syncing}>同期中</option>
+          <option value={SyncState.NeedsUpload}>アップロード待ち</option>
+          <option value={SyncState.NeedsDownload}>ダウンロード待ち</option>
+          <option value={SyncState.Conflict}>競合</option>
+          <option value={SyncState.Error}>エラー</option>
+          <option value={SyncState.Excluded}>除外</option>
+          <option value={SyncState.PendingDelete}>削除待ち</option>
         </select>
       </div>
 
@@ -186,15 +242,8 @@ export function FileList({ files }: FileListProps) {
                   <ArrowUpDown className="h-4 w-4" />
                 </button>
               </TableHead>
-              <TableHead>
-                <button
-                  className="flex items-center gap-1 hover:underline"
-                  onClick={() => handleSort("modified")}
-                >
-                  Last Modified
-                  <ArrowUpDown className="h-4 w-4" />
-                </button>
-              </TableHead>
+              <TableHead>Local Modified</TableHead>
+              <TableHead>Remote Modified</TableHead>
               <TableHead>
                 <button
                   className="flex items-center gap-1 hover:underline"
@@ -209,24 +258,62 @@ export function FileList({ files }: FileListProps) {
           <TableBody>
             {filteredAndSortedFiles.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={5} className="text-center text-muted-foreground">
+                <TableCell colSpan={6} className="text-center text-muted-foreground">
                   No files found
                 </TableCell>
               </TableRow>
             ) : (
-              filteredAndSortedFiles.map((file) => (
-                <TableRow key={file.path}>
-                  <TableCell>{getSyncStateIcon(file.state)}</TableCell>
-                  <TableCell className="font-medium">{file.path}</TableCell>
-                  <TableCell>
-                    {formatFileSize(file.local_size ?? file.remote_size)}
-                  </TableCell>
-                  <TableCell>
-                    {formatDate(file.local_modified ?? file.remote_modified)}
-                  </TableCell>
-                  <TableCell>{getSyncStateBadge(file.state)}</TableCell>
-                </TableRow>
-              ))
+              filteredAndSortedFiles.map((file) => {
+                // 背景色の設定（競合とエラー）
+                const bgColor =
+                  file.state === SyncState.Conflict ? "#fef9c3" :
+                  file.state === SyncState.Error ? "#fee2e2" :
+                  undefined;
+
+                // グレーアウト（削除待ちと除外）
+                const isGrayedOut =
+                  file.state === SyncState.PendingDelete ||
+                  file.state === SyncState.Excluded;
+
+                const textColor = isGrayedOut ? "#9ca3af" : undefined;
+                const textDecoration = file.state === SyncState.PendingDelete ? "line-through" : undefined;
+                const fontSize = file.state === SyncState.Excluded ? "0.9em" : undefined;
+
+                return (
+                  <TooltipProvider key={file.path}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <TableRow style={{ backgroundColor: bgColor }}>
+                          <TableCell>{getSyncStateIcon(file.state)}</TableCell>
+                          <TableCell
+                            className="font-medium"
+                            style={{
+                              color: textColor,
+                              textDecoration,
+                              fontSize
+                            }}
+                          >
+                            {file.path}
+                          </TableCell>
+                          <TableCell style={{ color: textColor }}>
+                            {formatFileSize(file.local_size ?? file.remote_size)}
+                          </TableCell>
+                          <TableCell style={{ color: textColor }}>
+                            {formatDate(file.local_modified)}
+                          </TableCell>
+                          <TableCell style={{ color: textColor }}>
+                            {formatDate(file.remote_modified)}
+                          </TableCell>
+                          <TableCell>{getSyncStateBadge(file.state)}</TableCell>
+                        </TableRow>
+                      </TooltipTrigger>
+                      <TooltipContent className="whitespace-pre-line">
+                        {getTooltipContent(file)}
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                );
+              })
             )}
           </TableBody>
         </Table>
