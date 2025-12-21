@@ -97,6 +97,7 @@ pub struct SyncFilesResponse {
     pub files_uploaded: usize,
     pub files_downloaded: usize,
     pub conflicts_resolved: usize,
+    pub files_deleted: usize,
     pub message: String,
 }
 
@@ -121,6 +122,8 @@ pub struct SyncStatusResponse {
     pub needs_upload_count: usize,
     pub needs_download_count: usize,
     pub conflict_count: usize,
+    pub pending_local_deletion_count: usize,
+    pub pending_remote_deletion_count: usize,
 }
 
 /// DTO for ComparisonResult (simplified for frontend)
@@ -617,6 +620,8 @@ pub async fn get_sync_status(
     let mut needs_upload_count = 0;
     let mut needs_download_count = 0;
     let mut conflict_count = 0;
+    let mut pending_local_deletion_count = 0;
+    let mut pending_remote_deletion_count = 0;
 
     for path in all_paths {
         let local_info = local_files.iter().find(|f| f.path == path);
@@ -631,17 +636,21 @@ pub async fn get_sync_status(
             SyncState::NeedsUpload => needs_upload_count += 1,
             SyncState::NeedsDownload => needs_download_count += 1,
             SyncState::Conflict => conflict_count += 1,
+            SyncState::PendingLocalDeletion => pending_local_deletion_count += 1,
+            SyncState::PendingRemoteDeletion => pending_remote_deletion_count += 1,
         }
 
         comparisons.push(comparison.into());
     }
 
     log::info!(
-        "Sync status: in_sync={}, upload={}, download={}, conflict={}",
+        "Sync status: in_sync={}, upload={}, download={}, conflict={}, pending_local_deletion={}, pending_remote_deletion={}",
         in_sync_count,
         needs_upload_count,
         needs_download_count,
-        conflict_count
+        conflict_count,
+        pending_local_deletion_count,
+        pending_remote_deletion_count
     );
 
     Ok(SyncStatusResponse {
@@ -650,6 +659,8 @@ pub async fn get_sync_status(
         needs_upload_count,
         needs_download_count,
         conflict_count,
+        pending_local_deletion_count,
+        pending_remote_deletion_count,
     })
 }
 
@@ -699,6 +710,7 @@ pub async fn sync_files(request: SyncFilesRequest) -> CommandResult<SyncFilesRes
     let mut files_uploaded = 0;
     let mut files_downloaded = 0;
     let mut conflicts_resolved = 0;
+    let mut files_deleted = 0;
     let mut errors = Vec::new();
 
     for comparison in status.comparisons {
@@ -716,6 +728,7 @@ pub async fn sync_files(request: SyncFilesRequest) -> CommandResult<SyncFilesRes
                         files_uploaded += 1;
                         files_downloaded += 1;
                     }
+                    SyncAction::Deleted => files_deleted += 1,
                     SyncAction::Skipped => {}
                 }
             }
@@ -728,16 +741,17 @@ pub async fn sync_files(request: SyncFilesRequest) -> CommandResult<SyncFilesRes
 
     let message = if errors.is_empty() {
         format!(
-            "Sync completed successfully. Uploaded: {}, Downloaded: {}, Conflicts: {}",
-            files_uploaded, files_downloaded, conflicts_resolved
+            "Sync completed successfully. Uploaded: {}, Downloaded: {}, Conflicts: {}, Deleted: {}",
+            files_uploaded, files_downloaded, conflicts_resolved, files_deleted
         )
     } else {
         format!(
-            "Sync completed with {} errors. Uploaded: {}, Downloaded: {}, Conflicts: {}. Errors: {}",
+            "Sync completed with {} errors. Uploaded: {}, Downloaded: {}, Conflicts: {}, Deleted: {}. Errors: {}",
             errors.len(),
             files_uploaded,
             files_downloaded,
             conflicts_resolved,
+            files_deleted,
             errors.join("; ")
         )
     };
@@ -749,6 +763,7 @@ pub async fn sync_files(request: SyncFilesRequest) -> CommandResult<SyncFilesRes
         files_uploaded,
         files_downloaded,
         conflicts_resolved,
+        files_deleted,
         message,
     })
 }
@@ -758,6 +773,7 @@ enum SyncAction {
     Uploaded,
     Downloaded,
     ConflictResolved,
+    Deleted,
     Skipped,
 }
 
@@ -862,6 +878,33 @@ async fn sync_single_file(
 
             log::info!("Successfully resolved conflict for: {}", comparison.path);
             Ok(SyncAction::ConflictResolved)
+        }
+
+        SyncState::PendingLocalDeletion => {
+            log::info!("Deleting from remote (deleted locally): {}", remote_path);
+
+            // Delete from S3
+            provider.delete(&remote_path).await?;
+
+            log::info!("Successfully deleted from remote: {}", comparison.path);
+            Ok(SyncAction::Deleted)
+        }
+
+        SyncState::PendingRemoteDeletion => {
+            log::info!("Deleting from local (deleted remotely): {}", comparison.path);
+
+            // Delete local file
+            if local_path.exists() {
+                fs::remove_file(&local_path).map_err(|e| {
+                    CommandError::OperationFailed(format!(
+                        "Failed to delete local file {}: {}",
+                        comparison.path, e
+                    ))
+                })?;
+            }
+
+            log::info!("Successfully deleted from local: {}", comparison.path);
+            Ok(SyncAction::Deleted)
         }
     }
 }
@@ -970,12 +1013,16 @@ mod tests {
             needs_upload_count: 3,
             needs_download_count: 2,
             conflict_count: 1,
+            pending_local_deletion_count: 2,
+            pending_remote_deletion_count: 1,
         };
 
         assert_eq!(response.in_sync_count, 5);
         assert_eq!(response.needs_upload_count, 3);
         assert_eq!(response.needs_download_count, 2);
         assert_eq!(response.conflict_count, 1);
+        assert_eq!(response.pending_local_deletion_count, 2);
+        assert_eq!(response.pending_remote_deletion_count, 1);
     }
 
     #[tokio::test]
