@@ -2,6 +2,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+pub mod metadata;
 pub mod s3;
 
 /// カスタムエラー型
@@ -47,7 +48,7 @@ pub struct FileInfo {
     /// 最終更新日時
     pub last_modified: DateTime<Utc>,
 
-    /// ETag（エンティティタグ、ファイルのハッシュ値）
+    /// ETag（エンティティタグ、ファイルのチェックサム：CRC32）
     pub etag: Option<String>,
 }
 
@@ -66,6 +67,82 @@ impl FileInfo {
             etag,
         }
     }
+
+    /// 2つのファイルの内容が同じかどうかを判定
+    ///
+    /// ファイルサイズとETag（CRC32チェックサム）を比較します。
+    /// ETagが両方とも存在する場合はETagで比較し、それ以外はサイズのみで比較します。
+    ///
+    /// # Arguments
+    /// * `other` - 比較対象のFileInfo
+    ///
+    /// # Returns
+    /// * `true` - ファイルの内容が同じ
+    /// * `false` - ファイルの内容が異なる
+    pub fn has_same_content(&self, other: &FileInfo) -> bool {
+        // サイズが異なれば確実に内容が異なる
+        if self.size != other.size {
+            return false;
+        }
+
+        // ETagが両方存在する場合はETagで比較
+        match (&self.etag, &other.etag) {
+            (Some(etag1), Some(etag2)) => etag1 == etag2,
+            // ETagがない場合はサイズのみで判断（完全ではない）
+            _ => true,
+        }
+    }
+
+    /// このファイルが他のファイルより新しいかどうかを判定
+    ///
+    /// 最終更新日時を比較します。
+    ///
+    /// # Arguments
+    /// * `other` - 比較対象のFileInfo
+    ///
+    /// # Returns
+    /// * `true` - このファイルの方が新しい
+    /// * `false` - このファイルの方が古いか同じ
+    pub fn is_newer_than(&self, other: &FileInfo) -> bool {
+        self.last_modified > other.last_modified
+    }
+
+    /// 同期が必要かどうかを判定
+    ///
+    /// 以下のいずれかに該当する場合、同期が必要と判定します:
+    /// 1. ファイルサイズが異なる
+    /// 2. ETag（CRC32チェックサム）が異なる
+    /// 3. 最終更新日時が異なる（秒単位で比較、ファイルシステムの精度を考慮）
+    ///
+    /// # Arguments
+    /// * `other` - 比較対象のFileInfo
+    ///
+    /// # Returns
+    /// * `true` - 同期が必要
+    /// * `false` - 同期不要（ファイルは同一）
+    pub fn needs_sync(&self, other: &FileInfo) -> bool {
+        // サイズが異なれば同期が必要
+        if self.size != other.size {
+            return true;
+        }
+
+        // ETagが両方存在する場合はETagで比較
+        if let (Some(etag1), Some(etag2)) = (&self.etag, &other.etag) {
+            if etag1 != etag2 {
+                return true;
+            }
+        }
+
+        // 最終更新日時が異なれば同期が必要
+        // ファイルシステムの時刻精度を考慮して秒単位で比較
+        let diff = (self.last_modified.timestamp() - other.last_modified.timestamp()).abs();
+        if diff > 1 {
+            return true;
+        }
+
+        // 全て同じなら同期不要
+        false
+    }
 }
 
 /// ファイルのメタデータを表す構造体
@@ -80,7 +157,7 @@ pub struct FileMetadata {
     /// コンテンツタイプ（MIMEタイプ）
     pub content_type: Option<String>,
 
-    /// ETag（エンティティタグ、ファイルのハッシュ値）
+    /// ETag（エンティティタグ、ファイルのチェックサム：CRC32）
     pub etag: Option<String>,
 }
 
@@ -334,6 +411,179 @@ mod tests {
 
         // 全てが同じ場合は同期不要
         assert_eq!(file1, file2);
+    }
+
+    // ========================================
+    // メタデータ比較ロジックテスト
+    // ========================================
+
+    #[test]
+    fn test_has_same_content_identical_files() {
+        let now = Utc::now();
+        let file1 = FileInfo::new(
+            "file.txt".to_string(),
+            1024,
+            now,
+            Some("etag123".to_string()),
+        );
+        let file2 = FileInfo::new(
+            "file.txt".to_string(),
+            1024,
+            now,
+            Some("etag123".to_string()),
+        );
+
+        assert!(file1.has_same_content(&file2));
+    }
+
+    #[test]
+    fn test_has_same_content_different_size() {
+        let now = Utc::now();
+        let file1 = FileInfo::new(
+            "file.txt".to_string(),
+            1024,
+            now,
+            Some("etag123".to_string()),
+        );
+        let file2 = FileInfo::new(
+            "file.txt".to_string(),
+            2048,
+            now,
+            Some("etag123".to_string()),
+        );
+
+        assert!(!file1.has_same_content(&file2));
+    }
+
+    #[test]
+    fn test_has_same_content_different_etag() {
+        let now = Utc::now();
+        let file1 = FileInfo::new(
+            "file.txt".to_string(),
+            1024,
+            now,
+            Some("etag123".to_string()),
+        );
+        let file2 = FileInfo::new(
+            "file.txt".to_string(),
+            1024,
+            now,
+            Some("etag456".to_string()),
+        );
+
+        assert!(!file1.has_same_content(&file2));
+    }
+
+    #[test]
+    fn test_has_same_content_no_etag() {
+        let now = Utc::now();
+        let file1 = FileInfo::new("file.txt".to_string(), 1024, now, None);
+        let file2 = FileInfo::new("file.txt".to_string(), 1024, now, None);
+
+        // ETagがない場合はサイズのみで判断
+        assert!(file1.has_same_content(&file2));
+    }
+
+    #[test]
+    fn test_is_newer_than() {
+        let time1 = Utc.with_ymd_and_hms(2025, 12, 17, 10, 0, 0).unwrap();
+        let time2 = Utc.with_ymd_and_hms(2025, 12, 17, 11, 0, 0).unwrap();
+
+        let file1 = FileInfo::new("file.txt".to_string(), 1024, time1, None);
+        let file2 = FileInfo::new("file.txt".to_string(), 1024, time2, None);
+
+        assert!(!file1.is_newer_than(&file2)); // file1 is older
+        assert!(file2.is_newer_than(&file1)); // file2 is newer
+    }
+
+    #[test]
+    fn test_is_newer_than_same_time() {
+        let now = Utc::now();
+        let file1 = FileInfo::new("file.txt".to_string(), 1024, now, None);
+        let file2 = FileInfo::new("file.txt".to_string(), 1024, now, None);
+
+        assert!(!file1.is_newer_than(&file2));
+        assert!(!file2.is_newer_than(&file1));
+    }
+
+    #[test]
+    fn test_needs_sync_identical() {
+        let now = Utc::now();
+        let file1 = FileInfo::new(
+            "file.txt".to_string(),
+            1024,
+            now,
+            Some("etag123".to_string()),
+        );
+        let file2 = FileInfo::new(
+            "file.txt".to_string(),
+            1024,
+            now,
+            Some("etag123".to_string()),
+        );
+
+        assert!(!file1.needs_sync(&file2));
+    }
+
+    #[test]
+    fn test_needs_sync_different_size() {
+        let now = Utc::now();
+        let file1 = FileInfo::new("file.txt".to_string(), 1024, now, None);
+        let file2 = FileInfo::new("file.txt".to_string(), 2048, now, None);
+
+        assert!(file1.needs_sync(&file2));
+    }
+
+    #[test]
+    fn test_needs_sync_different_etag() {
+        let now = Utc::now();
+        let file1 = FileInfo::new(
+            "file.txt".to_string(),
+            1024,
+            now,
+            Some("etag123".to_string()),
+        );
+        let file2 = FileInfo::new(
+            "file.txt".to_string(),
+            1024,
+            now,
+            Some("etag456".to_string()),
+        );
+
+        assert!(file1.needs_sync(&file2));
+    }
+
+    #[test]
+    fn test_needs_sync_different_time() {
+        let time1 = Utc.with_ymd_and_hms(2025, 12, 17, 10, 0, 0).unwrap();
+        let time2 = Utc.with_ymd_and_hms(2025, 12, 17, 11, 0, 0).unwrap();
+
+        let file1 = FileInfo::new("file.txt".to_string(), 1024, time1, None);
+        let file2 = FileInfo::new("file.txt".to_string(), 1024, time2, None);
+
+        assert!(file1.needs_sync(&file2));
+    }
+
+    #[test]
+    fn test_needs_sync_small_time_difference() {
+        let time1 = Utc.with_ymd_and_hms(2025, 12, 17, 10, 0, 0).unwrap();
+        let time2 = Utc.with_ymd_and_hms(2025, 12, 17, 10, 0, 1).unwrap();
+
+        let file1 = FileInfo::new(
+            "file.txt".to_string(),
+            1024,
+            time1,
+            Some("etag123".to_string()),
+        );
+        let file2 = FileInfo::new(
+            "file.txt".to_string(),
+            1024,
+            time2,
+            Some("etag123".to_string()),
+        );
+
+        // 1秒以内の差は許容範囲（ファイルシステムの精度を考慮）
+        assert!(!file1.needs_sync(&file2));
     }
 
     // ========================================
