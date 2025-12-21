@@ -8,6 +8,7 @@
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::path::Path;
 use thiserror::Error;
 
@@ -37,6 +38,10 @@ pub enum SyncState {
     NeedsDownload,
     /// Both files have been modified (conflict)
     Conflict,
+    /// File was deleted locally, waiting to be deleted from remote
+    PendingLocalDeletion,
+    /// File was deleted remotely, waiting to be deleted locally
+    PendingRemoteDeletion,
 }
 
 /// Result of comparing local and remote files
@@ -239,6 +244,126 @@ fn get_hostname() -> Result<String, SyncError> {
         .map_err(|_| SyncError::HostnameError)?
         .into_string()
         .map_err(|_| SyncError::HostnameError)
+}
+
+/// Deletion detection result
+#[derive(Debug, Clone, PartialEq)]
+pub struct DeletionResult {
+    /// Files deleted locally (exist in remote but not in local)
+    pub local_deletions: Vec<String>,
+    /// Files deleted remotely (exist in local but not in remote)
+    pub remote_deletions: Vec<String>,
+}
+
+/// Detect file deletions by comparing current state with previously synced state
+///
+/// # Arguments
+/// * `local_files` - Current local file list
+/// * `remote_files` - Current remote file list
+/// * `last_synced_files` - List of files that were synced in the last successful sync
+///
+/// # Returns
+/// DeletionResult containing lists of locally and remotely deleted files
+///
+/// # Logic
+/// - If a file was in last_synced_files but is not in local_files, it was deleted locally
+/// - If a file was in last_synced_files but is not in remote_files, it was deleted remotely
+pub fn detect_deletions(
+    local_files: &[FileInfo],
+    remote_files: &[FileInfo],
+    last_synced_files: &[String],
+) -> DeletionResult {
+    // Create sets for efficient lookup
+    let local_paths: HashSet<&str> = local_files.iter().map(|f| f.path.as_str()).collect();
+    let remote_paths: HashSet<&str> = remote_files.iter().map(|f| f.path.as_str()).collect();
+
+    let mut local_deletions = Vec::new();
+    let mut remote_deletions = Vec::new();
+
+    // Check each previously synced file
+    for synced_path in last_synced_files {
+        let exists_locally = local_paths.contains(synced_path.as_str());
+        let exists_remotely = remote_paths.contains(synced_path.as_str());
+
+        match (exists_locally, exists_remotely) {
+            // File exists remotely but not locally -> deleted locally
+            (false, true) => {
+                local_deletions.push(synced_path.clone());
+            }
+            // File exists locally but not remotely -> deleted remotely
+            (true, false) => {
+                remote_deletions.push(synced_path.clone());
+            }
+            // Both deleted or both exist -> no deletion to sync
+            _ => {}
+        }
+    }
+
+    DeletionResult {
+        local_deletions,
+        remote_deletions,
+    }
+}
+
+/// Compare files with deletion detection support
+///
+/// This is an enhanced version of compare_files that also considers deletion state.
+///
+/// # Arguments
+/// * `local_info` - Local file information (None if file doesn't exist locally)
+/// * `remote_info` - Remote file information (None if file doesn't exist remotely)
+/// * `last_sync_time` - Last time this file was synchronized (None if never synced)
+/// * `was_previously_synced` - Whether this file was synced before
+///
+/// # Returns
+/// ComparisonResult indicating the sync state including deletion states
+pub fn compare_files_with_deletion(
+    local_info: Option<&FileInfo>,
+    remote_info: Option<&FileInfo>,
+    last_sync_time: Option<DateTime<Utc>>,
+    was_previously_synced: bool,
+) -> ComparisonResult {
+    let path = local_info
+        .or(remote_info)
+        .map(|info| info.path.clone())
+        .unwrap_or_default();
+
+    let state = match (local_info, remote_info, was_previously_synced) {
+        // Both exist - use regular comparison logic
+        (Some(local), Some(remote), _) => {
+            let result = compare_files(Some(local), Some(remote), last_sync_time);
+            return result;
+        }
+        // Only remote exists
+        (None, Some(_remote), was_synced) => {
+            if was_synced {
+                // Was synced before but now missing locally -> deleted locally
+                SyncState::PendingLocalDeletion
+            } else {
+                // Never synced, just a new remote file -> needs download
+                SyncState::NeedsDownload
+            }
+        }
+        // Only local exists
+        (Some(_local), None, was_synced) => {
+            if was_synced {
+                // Was synced before but now missing remotely -> deleted remotely
+                SyncState::PendingRemoteDeletion
+            } else {
+                // Never synced, just a new local file -> needs upload
+                SyncState::NeedsUpload
+            }
+        }
+        // Neither exists (shouldn't happen in practice)
+        (None, None, _) => SyncState::InSync,
+    };
+
+    ComparisonResult {
+        path,
+        state,
+        local_info: local_info.cloned(),
+        remote_info: remote_info.cloned(),
+    }
 }
 
 #[cfg(test)]
@@ -556,5 +681,261 @@ mod tests {
         };
 
         assert_eq!(res1, res2);
+    }
+
+    // ========================================
+    // Deletion Detection Tests
+    // ========================================
+
+    #[test]
+    fn test_sync_state_deletion_variants() {
+        // Verify all deletion variants can be created
+        let states = vec![
+            SyncState::PendingLocalDeletion,
+            SyncState::PendingRemoteDeletion,
+        ];
+        assert_eq!(states.len(), 2);
+    }
+
+    #[test]
+    fn test_detect_deletions_no_deletions() {
+        let now = Utc::now();
+        let local_files = vec![
+            create_file_info("file1.txt", 100, now, None),
+            create_file_info("file2.txt", 200, now, None),
+        ];
+        let remote_files = vec![
+            create_file_info("file1.txt", 100, now, None),
+            create_file_info("file2.txt", 200, now, None),
+        ];
+        let last_synced = vec!["file1.txt".to_string(), "file2.txt".to_string()];
+
+        let result = detect_deletions(&local_files, &remote_files, &last_synced);
+
+        assert!(result.local_deletions.is_empty());
+        assert!(result.remote_deletions.is_empty());
+    }
+
+    #[test]
+    fn test_detect_deletions_local_deletion() {
+        let now = Utc::now();
+        // file2.txt only exists remotely (deleted locally)
+        let local_files = vec![create_file_info("file1.txt", 100, now, None)];
+        let remote_files = vec![
+            create_file_info("file1.txt", 100, now, None),
+            create_file_info("file2.txt", 200, now, None),
+        ];
+        let last_synced = vec!["file1.txt".to_string(), "file2.txt".to_string()];
+
+        let result = detect_deletions(&local_files, &remote_files, &last_synced);
+
+        assert_eq!(result.local_deletions.len(), 1);
+        assert_eq!(result.local_deletions[0], "file2.txt");
+        assert!(result.remote_deletions.is_empty());
+    }
+
+    #[test]
+    fn test_detect_deletions_remote_deletion() {
+        let now = Utc::now();
+        // file2.txt only exists locally (deleted remotely)
+        let local_files = vec![
+            create_file_info("file1.txt", 100, now, None),
+            create_file_info("file2.txt", 200, now, None),
+        ];
+        let remote_files = vec![create_file_info("file1.txt", 100, now, None)];
+        let last_synced = vec!["file1.txt".to_string(), "file2.txt".to_string()];
+
+        let result = detect_deletions(&local_files, &remote_files, &last_synced);
+
+        assert!(result.local_deletions.is_empty());
+        assert_eq!(result.remote_deletions.len(), 1);
+        assert_eq!(result.remote_deletions[0], "file2.txt");
+    }
+
+    #[test]
+    fn test_detect_deletions_both_deletions() {
+        let now = Utc::now();
+        let local_files = vec![create_file_info("file1.txt", 100, now, None)];
+        let remote_files = vec![create_file_info("file2.txt", 200, now, None)];
+        let last_synced = vec!["file1.txt".to_string(), "file2.txt".to_string()];
+
+        let result = detect_deletions(&local_files, &remote_files, &last_synced);
+
+        assert_eq!(result.local_deletions.len(), 1);
+        assert_eq!(result.local_deletions[0], "file2.txt");
+        assert_eq!(result.remote_deletions.len(), 1);
+        assert_eq!(result.remote_deletions[0], "file1.txt");
+    }
+
+    #[test]
+    fn test_detect_deletions_new_files_not_in_last_synced() {
+        let now = Utc::now();
+        // file3.txt is new (not in last_synced), should not be treated as deletion
+        let local_files = vec![
+            create_file_info("file1.txt", 100, now, None),
+            create_file_info("file3.txt", 300, now, None),
+        ];
+        let remote_files = vec![
+            create_file_info("file1.txt", 100, now, None),
+            create_file_info("file2.txt", 200, now, None),
+        ];
+        let last_synced = vec!["file1.txt".to_string(), "file2.txt".to_string()];
+
+        let result = detect_deletions(&local_files, &remote_files, &last_synced);
+
+        // file2.txt deleted locally
+        assert_eq!(result.local_deletions.len(), 1);
+        assert_eq!(result.local_deletions[0], "file2.txt");
+        // No remote deletions (file3 is new, not deleted)
+        assert!(result.remote_deletions.is_empty());
+    }
+
+    #[test]
+    fn test_detect_deletions_empty_last_synced() {
+        let now = Utc::now();
+        let local_files = vec![create_file_info("file1.txt", 100, now, None)];
+        let remote_files = vec![create_file_info("file2.txt", 200, now, None)];
+        let last_synced: Vec<String> = vec![];
+
+        let result = detect_deletions(&local_files, &remote_files, &last_synced);
+
+        // No deletions if nothing was synced before
+        assert!(result.local_deletions.is_empty());
+        assert!(result.remote_deletions.is_empty());
+    }
+
+    #[test]
+    fn test_compare_files_with_deletion_pending_local_deletion() {
+        let now = Utc::now();
+        // File only exists remotely, was synced before -> deleted locally
+        let remote = create_file_info("file.txt", 100, now, Some("etag1"));
+
+        let result = compare_files_with_deletion(None, Some(&remote), Some(now), true);
+
+        assert_eq!(result.state, SyncState::PendingLocalDeletion);
+        assert_eq!(result.path, "file.txt");
+        assert!(result.local_info.is_none());
+        assert!(result.remote_info.is_some());
+    }
+
+    #[test]
+    fn test_compare_files_with_deletion_needs_download_new_file() {
+        let now = Utc::now();
+        // File only exists remotely, never synced before -> needs download
+        let remote = create_file_info("file.txt", 100, now, Some("etag1"));
+
+        let result = compare_files_with_deletion(None, Some(&remote), None, false);
+
+        assert_eq!(result.state, SyncState::NeedsDownload);
+        assert_eq!(result.path, "file.txt");
+    }
+
+    #[test]
+    fn test_compare_files_with_deletion_pending_remote_deletion() {
+        let now = Utc::now();
+        // File only exists locally, was synced before -> deleted remotely
+        let local = create_file_info("file.txt", 100, now, Some("etag1"));
+
+        let result = compare_files_with_deletion(Some(&local), None, Some(now), true);
+
+        assert_eq!(result.state, SyncState::PendingRemoteDeletion);
+        assert_eq!(result.path, "file.txt");
+        assert!(result.local_info.is_some());
+        assert!(result.remote_info.is_none());
+    }
+
+    #[test]
+    fn test_compare_files_with_deletion_needs_upload_new_file() {
+        let now = Utc::now();
+        // File only exists locally, never synced before -> needs upload
+        let local = create_file_info("file.txt", 100, now, Some("etag1"));
+
+        let result = compare_files_with_deletion(Some(&local), None, None, false);
+
+        assert_eq!(result.state, SyncState::NeedsUpload);
+        assert_eq!(result.path, "file.txt");
+    }
+
+    #[test]
+    fn test_compare_files_with_deletion_both_exist_in_sync() {
+        let now = Utc::now();
+        let last_sync = now - Duration::hours(1);
+        // Both exist, same content -> in sync
+        let local = create_file_info(
+            "file.txt",
+            100,
+            last_sync - Duration::minutes(30),
+            Some("etag1"),
+        );
+        let remote = create_file_info(
+            "file.txt",
+            100,
+            last_sync - Duration::minutes(30),
+            Some("etag1"),
+        );
+
+        let result = compare_files_with_deletion(Some(&local), Some(&remote), Some(last_sync), true);
+
+        assert_eq!(result.state, SyncState::InSync);
+    }
+
+    #[test]
+    fn test_compare_files_with_deletion_both_exist_needs_upload() {
+        let now = Utc::now();
+        let last_sync = now - Duration::hours(1);
+        // Both exist, local is newer -> needs upload
+        let local = create_file_info("file.txt", 100, now, Some("etag2"));
+        let remote = create_file_info(
+            "file.txt",
+            100,
+            last_sync - Duration::minutes(30),
+            Some("etag1"),
+        );
+
+        let result = compare_files_with_deletion(Some(&local), Some(&remote), Some(last_sync), true);
+
+        assert_eq!(result.state, SyncState::NeedsUpload);
+    }
+
+    #[test]
+    fn test_deletion_result_equality() {
+        let res1 = DeletionResult {
+            local_deletions: vec!["file1.txt".to_string()],
+            remote_deletions: vec!["file2.txt".to_string()],
+        };
+        let res2 = DeletionResult {
+            local_deletions: vec!["file1.txt".to_string()],
+            remote_deletions: vec!["file2.txt".to_string()],
+        };
+
+        assert_eq!(res1, res2);
+    }
+
+    #[test]
+    fn test_detect_deletions_multiple_files() {
+        let now = Utc::now();
+        let local_files = vec![
+            create_file_info("keep1.txt", 100, now, None),
+            create_file_info("keep2.txt", 200, now, None),
+        ];
+        let remote_files = vec![
+            create_file_info("keep1.txt", 100, now, None),
+            create_file_info("deleted_locally1.txt", 300, now, None),
+            create_file_info("deleted_locally2.txt", 400, now, None),
+        ];
+        let last_synced = vec![
+            "keep1.txt".to_string(),
+            "keep2.txt".to_string(),
+            "deleted_locally1.txt".to_string(),
+            "deleted_locally2.txt".to_string(),
+        ];
+
+        let result = detect_deletions(&local_files, &remote_files, &last_synced);
+
+        assert_eq!(result.local_deletions.len(), 2);
+        assert!(result.local_deletions.contains(&"deleted_locally1.txt".to_string()));
+        assert!(result.local_deletions.contains(&"deleted_locally2.txt".to_string()));
+        assert_eq!(result.remote_deletions.len(), 1);
+        assert_eq!(result.remote_deletions[0], "keep2.txt");
     }
 }
