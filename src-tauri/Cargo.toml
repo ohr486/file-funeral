@@ -39,5 +39,9 @@ chrono = { version = "0.4", features = ["serde"] }
 async-trait = "0.1"
 hostname = "0.4"
 
-# Tauri Plugins (planned)
+# Tauri Plugins
 tauri-plugin-fs = "2"
+tauri-plugin-dialog = "2"
+
+[dev-dependencies]
+tempfile = "3"

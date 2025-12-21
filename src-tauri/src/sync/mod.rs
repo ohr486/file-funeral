@@ -31,16 +31,12 @@ pub enum SyncError {
 pub enum SyncState {
     /// File is synchronized (local and remote are identical)
     InSync,
-    /// Local file is newer than remote (upload needed)
-    LocalNewer,
-    /// Remote file is newer than local (download needed)
-    RemoteNewer,
+    /// File needs to be uploaded (local only or local is newer)
+    NeedsUpload,
+    /// File needs to be downloaded (remote only or remote is newer)
+    NeedsDownload,
     /// Both files have been modified (conflict)
     Conflict,
-    /// File exists only locally (upload needed)
-    LocalOnly,
-    /// File exists only remotely (download needed)
-    RemoteOnly,
 }
 
 /// Result of comparing local and remote files
@@ -94,11 +90,11 @@ pub fn compare_files(
                 // Both modified since last sync - conflict
                 SyncState::Conflict
             } else if local_modified_after_sync {
-                // Only local modified
-                SyncState::LocalNewer
+                // Only local modified - needs upload
+                SyncState::NeedsUpload
             } else if remote_modified_after_sync {
-                // Only remote modified
-                SyncState::RemoteNewer
+                // Only remote modified - needs download
+                SyncState::NeedsDownload
             } else if files_are_identical(local, remote) {
                 // Neither modified, files identical
                 SyncState::InSync
@@ -109,17 +105,18 @@ pub fn compare_files(
         }
         // Both exist but never synced before
         (Some(local), Some(remote), None) => {
-            if files_are_identical(local, remote) {
+            // Use looser comparison for initial sync
+            if files_are_probably_same(local, remote) {
                 SyncState::InSync
             } else {
                 // Different files, never synced - conflict
                 SyncState::Conflict
             }
         }
-        // Only local exists
-        (Some(_), None, _) => SyncState::LocalOnly,
-        // Only remote exists
-        (None, Some(_), _) => SyncState::RemoteOnly,
+        // Only local exists - needs upload
+        (Some(_), None, _) => SyncState::NeedsUpload,
+        // Only remote exists - needs download
+        (None, Some(_), _) => SyncState::NeedsDownload,
         // Neither exists (shouldn't happen in practice)
         (None, None, _) => SyncState::InSync,
     };
@@ -156,6 +153,32 @@ fn files_are_identical(local: &FileInfo, remote: &FileInfo) -> bool {
     };
 
     time_diff.num_seconds() <= 1
+}
+
+/// Check if two files are probably the same (for initial sync without sync history)
+///
+/// This uses looser criteria than files_are_identical, suitable for initial sync
+/// when we don't have last_sync_time information.
+///
+/// Files are considered probably same if:
+/// - Same size and same ETag (if ETags exist), or
+/// - Same size (if no ETags available)
+///
+/// This avoids false conflicts due to timestamp differences during initial sync.
+fn files_are_probably_same(local: &FileInfo, remote: &FileInfo) -> bool {
+    // Size must match
+    if local.size != remote.size {
+        return false;
+    }
+
+    // If both have ETags, compare them
+    if let (Some(local_etag), Some(remote_etag)) = (&local.etag, &remote.etag) {
+        return local_etag == remote_etag;
+    }
+
+    // If no ETag, consider same if size matches
+    // This is a looser check, but reasonable for initial sync
+    true
 }
 
 /// Generate a conflict resolution path for a local file
@@ -242,13 +265,11 @@ mod tests {
         // Just verify all variants can be created
         let states = vec![
             SyncState::InSync,
-            SyncState::LocalNewer,
-            SyncState::RemoteNewer,
+            SyncState::NeedsUpload,
+            SyncState::NeedsDownload,
             SyncState::Conflict,
-            SyncState::LocalOnly,
-            SyncState::RemoteOnly,
         ];
-        assert_eq!(states.len(), 6);
+        assert_eq!(states.len(), 4);
     }
 
     #[test]
@@ -306,6 +327,46 @@ mod tests {
     }
 
     #[test]
+    fn test_files_probably_same_with_etag() {
+        let now = Utc::now();
+        let file1 = create_file_info("test.txt", 100, now, Some("abc123"));
+        let file2 = create_file_info("test.txt", 100, now + Duration::hours(1), Some("abc123"));
+
+        // Same ETag means probably same, even with different timestamps
+        assert!(files_are_probably_same(&file1, &file2));
+    }
+
+    #[test]
+    fn test_files_probably_same_different_etag() {
+        let now = Utc::now();
+        let file1 = create_file_info("test.txt", 100, now, Some("abc123"));
+        let file2 = create_file_info("test.txt", 100, now, Some("def456"));
+
+        // Different ETag means not same
+        assert!(!files_are_probably_same(&file1, &file2));
+    }
+
+    #[test]
+    fn test_files_probably_same_no_etag_same_size() {
+        let now = Utc::now();
+        let file1 = create_file_info("test.txt", 100, now, None);
+        let file2 = create_file_info("test.txt", 100, now + Duration::hours(1), None);
+
+        // No ETag but same size means probably same (loose check for initial sync)
+        assert!(files_are_probably_same(&file1, &file2));
+    }
+
+    #[test]
+    fn test_files_probably_same_different_size() {
+        let now = Utc::now();
+        let file1 = create_file_info("test.txt", 100, now, None);
+        let file2 = create_file_info("test.txt", 200, now, None);
+
+        // Different size means not same
+        assert!(!files_are_probably_same(&file1, &file2));
+    }
+
+    #[test]
     fn test_compare_files_both_in_sync() {
         let now = Utc::now();
         let last_sync = now - Duration::hours(1);
@@ -330,7 +391,7 @@ mod tests {
     }
 
     #[test]
-    fn test_compare_files_local_newer() {
+    fn test_compare_files_needs_upload() {
         let now = Utc::now();
         let last_sync = now - Duration::hours(1);
 
@@ -344,11 +405,11 @@ mod tests {
 
         let result = compare_files(Some(&local), Some(&remote), Some(last_sync));
 
-        assert_eq!(result.state, SyncState::LocalNewer);
+        assert_eq!(result.state, SyncState::NeedsUpload);
     }
 
     #[test]
-    fn test_compare_files_remote_newer() {
+    fn test_compare_files_needs_download() {
         let now = Utc::now();
         let last_sync = now - Duration::hours(1);
 
@@ -362,7 +423,7 @@ mod tests {
 
         let result = compare_files(Some(&local), Some(&remote), Some(last_sync));
 
-        assert_eq!(result.state, SyncState::RemoteNewer);
+        assert_eq!(result.state, SyncState::NeedsDownload);
     }
 
     #[test]
@@ -379,23 +440,23 @@ mod tests {
     }
 
     #[test]
-    fn test_compare_files_local_only() {
+    fn test_compare_files_local_only_needs_upload() {
         let now = Utc::now();
         let local = create_file_info("test.txt", 100, now, Some("abc123"));
 
         let result = compare_files(Some(&local), None, None);
 
-        assert_eq!(result.state, SyncState::LocalOnly);
+        assert_eq!(result.state, SyncState::NeedsUpload);
     }
 
     #[test]
-    fn test_compare_files_remote_only() {
+    fn test_compare_files_remote_only_needs_download() {
         let now = Utc::now();
         let remote = create_file_info("test.txt", 100, now, Some("abc123"));
 
         let result = compare_files(None, Some(&remote), None);
 
-        assert_eq!(result.state, SyncState::RemoteOnly);
+        assert_eq!(result.state, SyncState::NeedsDownload);
     }
 
     #[test]
@@ -474,7 +535,7 @@ mod tests {
         let local = create_file_info("test.txt", 100, now, Some("abc123"));
         let result = ComparisonResult {
             path: "test.txt".to_string(),
-            state: SyncState::LocalOnly,
+            state: SyncState::NeedsUpload,
             local_info: Some(local),
             remote_info: None,
         };
