@@ -8,7 +8,7 @@ use rusqlite::Connection;
 use super::DbError;
 
 /// Current schema version
-const CURRENT_SCHEMA_VERSION: i32 = 1;
+const CURRENT_SCHEMA_VERSION: i32 = 2;
 
 /// Run all pending database migrations
 ///
@@ -53,6 +53,11 @@ pub fn run_migrations(conn: &Connection) -> Result<(), DbError> {
     if current_version < 1 {
         log::info!("Applying migration v1");
         apply_migration_v1(conn)?;
+    }
+
+    if current_version < 2 {
+        log::info!("Applying migration v2");
+        apply_migration_v2(conn)?;
     }
 
     log::info!(
@@ -142,6 +147,44 @@ fn apply_migration_v1(conn: &Connection) -> Result<(), DbError> {
     )?;
 
     log::info!("Migration v1 completed successfully");
+    Ok(())
+}
+
+/// Apply migration v2
+///
+/// Creates the settings table for storing sync configuration:
+/// - local_path: Local folder path to sync
+/// - remote_prefix: S3 prefix to sync with
+/// - auto_sync_on_startup: Enable auto-sync on app startup
+/// - auto_sync_on_shutdown: Enable auto-sync on app shutdown
+/// - created_at: When the setting was first created
+/// - updated_at: When the setting was last updated
+fn apply_migration_v2(conn: &Connection) -> Result<(), DbError> {
+    log::info!("Creating settings table");
+
+    // Create settings table
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS settings (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            local_path TEXT NOT NULL,
+            remote_prefix TEXT NOT NULL,
+            auto_sync_on_startup INTEGER NOT NULL DEFAULT 1,
+            auto_sync_on_shutdown INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )",
+        [],
+    )?;
+
+    log::info!("Recording schema version");
+
+    // Record schema version
+    conn.execute(
+        "INSERT INTO schema_version (version, applied_at) VALUES (?1, datetime('now'))",
+        [2],
+    )?;
+
+    log::info!("Migration v2 completed successfully");
     Ok(())
 }
 
@@ -246,7 +289,7 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(version, 1);
+        assert_eq!(version, CURRENT_SCHEMA_VERSION);
     }
 
     #[test]
@@ -283,5 +326,51 @@ mod tests {
         );
         // Should fail due to foreign key constraint
         assert!(invalid_result.is_err());
+    }
+
+    #[test]
+    fn test_settings_table_created() {
+        let conn = Connection::open_in_memory().unwrap();
+        run_migrations(&conn).unwrap();
+
+        // Check settings table exists
+        let count: i32 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='settings'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn test_settings_table_single_row_constraint() {
+        let conn = Connection::open_in_memory().unwrap();
+        run_migrations(&conn).unwrap();
+
+        // Insert first setting
+        let result1 = conn.execute(
+            "INSERT INTO settings (id, local_path, remote_prefix, created_at, updated_at)
+             VALUES (1, '/test', 'test/', datetime('now'), datetime('now'))",
+            [],
+        );
+        assert!(result1.is_ok());
+
+        // Try to insert another setting with id=1 (should fail due to PRIMARY KEY)
+        let result2 = conn.execute(
+            "INSERT INTO settings (id, local_path, remote_prefix, created_at, updated_at)
+             VALUES (1, '/test2', 'test2/', datetime('now'), datetime('now'))",
+            [],
+        );
+        assert!(result2.is_err());
+
+        // Try to insert with id=2 (should fail due to CHECK constraint)
+        let result3 = conn.execute(
+            "INSERT INTO settings (id, local_path, remote_prefix, created_at, updated_at)
+             VALUES (2, '/test2', 'test2/', datetime('now'), datetime('now'))",
+            [],
+        );
+        assert!(result3.is_err());
     }
 }

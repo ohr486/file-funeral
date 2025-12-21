@@ -9,6 +9,7 @@
 //! - Test: /tmp/.file-funeral-test/sync_history.db
 
 pub mod schema;
+pub mod settings;
 pub mod sync_history;
 
 use r2d2::Pool;

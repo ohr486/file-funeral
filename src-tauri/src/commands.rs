@@ -129,6 +129,23 @@ pub struct SyncStatusResponse {
     pub pending_remote_deletion_count: usize,
 }
 
+/// Request structure for saving sync settings
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SaveSettingsRequest {
+    pub local_path: String,
+    pub remote_prefix: String,
+    pub auto_sync_on_startup: bool,
+    pub auto_sync_on_shutdown: bool,
+}
+
+/// Response structure for settings operations
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SettingsResponse {
+    pub success: bool,
+    pub message: String,
+    pub settings: Option<crate::db::settings::SyncSettings>,
+}
+
 /// DTO for ComparisonResult (simplified for frontend)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ComparisonResultDto {
@@ -725,7 +742,7 @@ pub async fn get_sync_status(
 }
 
 /// Internal implementation of sync_files
-async fn sync_files_impl(
+pub(crate) async fn sync_files_impl(
     request: &SyncFilesRequest,
     db_pool: &crate::db::DbPool,
 ) -> CommandResult<SyncFilesResponse> {
@@ -1645,5 +1662,85 @@ mod tests {
 
         // Cleanup test credentials
         let _ = test_manager.delete_aws_credentials();
+    }
+}
+
+// ============================================================================
+// Settings Commands (Phase 3.4 - Auto-sync)
+// ============================================================================
+
+/// Save sync settings
+///
+/// This command stores the sync configuration (local path, remote prefix, auto-sync flags)
+/// to the database.
+///
+/// # Arguments
+/// * `request` - The settings to save
+/// * `db_pool` - Database connection pool
+///
+/// # Returns
+/// A response indicating success or failure
+#[tauri::command]
+pub async fn save_sync_settings(
+    request: SaveSettingsRequest,
+    db_pool: tauri::State<'_, crate::db::DbPool>,
+) -> CommandResult<SettingsResponse> {
+    log::info!("save_sync_settings called");
+
+    // Validate input
+    if request.local_path.is_empty() {
+        return Err(CommandError::InvalidInput(
+            "Local path cannot be empty".to_string(),
+        ));
+    }
+
+    let settings = crate::db::settings::SyncSettings::new(
+        request.local_path,
+        request.remote_prefix,
+        request.auto_sync_on_startup,
+        request.auto_sync_on_shutdown,
+    );
+
+    crate::db::settings::save_settings(&db_pool, &settings)?;
+
+    // Load the saved settings to return with timestamps
+    let saved_settings = crate::db::settings::load_settings(&db_pool)?;
+
+    Ok(SettingsResponse {
+        success: true,
+        message: "Settings saved successfully".to_string(),
+        settings: saved_settings,
+    })
+}
+
+/// Get sync settings
+///
+/// This command retrieves the stored sync configuration from the database.
+///
+/// # Arguments
+/// * `db_pool` - Database connection pool
+///
+/// # Returns
+/// The current settings, or None if not configured
+#[tauri::command]
+pub async fn get_sync_settings(
+    db_pool: tauri::State<'_, crate::db::DbPool>,
+) -> CommandResult<SettingsResponse> {
+    log::info!("get_sync_settings called");
+
+    let settings = crate::db::settings::load_settings(&db_pool)?;
+
+    if settings.is_some() {
+        Ok(SettingsResponse {
+            success: true,
+            message: "Settings loaded successfully".to_string(),
+            settings,
+        })
+    } else {
+        Ok(SettingsResponse {
+            success: false,
+            message: "No settings found".to_string(),
+            settings: None,
+        })
     }
 }
