@@ -1,8 +1,11 @@
 // モジュール宣言
 pub mod auth;
 pub mod commands;
+pub mod db;
 pub mod storage;
 pub mod sync;
+
+use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -16,6 +19,11 @@ pub fn run() {
                         .build(),
                 )?;
             }
+
+            // Initialize database pool
+            let db_pool = db::init_db_pool("file-funeral").expect("Failed to initialize database");
+            app.manage(db_pool);
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

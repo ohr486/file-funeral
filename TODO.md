@@ -178,27 +178,27 @@
 - ✅ テスト作成
 
 #### 3.3.1 削除同期の完全動作実装（同期履歴機能）
-**注**: 現在、削除検出ロジックは実装済みだが、同期履歴がないため実際には動作しない
+**注**: ✅ 実装完了！削除検出ロジックと同期履歴が完全に動作します。
 
-- ⬜ 同期履歴の永続化（SQLite）
-  - ⬜ SQLite依存関係追加（`rusqlite`, `r2d2`, `r2d2_sqlite`）
-  - ⬜ データベーススキーマ設計
-    - ⬜ `sync_history`テーブル（同期実行履歴）
-    - ⬜ `synced_files`テーブル（最終同期時のファイル一覧）
-  - ⬜ データベース初期化処理
-  - ⬜ 同期履歴の保存・読み込みAPI実装
-- ⬜ commands.rsの修正
-  - ⬜ `get_sync_status()`で削除検出を有効化
-  - ⬜ `sync_files()`で削除検出を有効化
-  - ⬜ 同期成功時に履歴を更新
-  - ⬜ エラーハンドリング強化
-- ⬜ フロントエンド型定義の更新
-  - ⬜ `SyncState`に`PendingLocalDeletion`と`PendingRemoteDeletion`を追加
-  - ⬜ `SyncStatusResponse`に削除カウンター追加
-  - ⬜ `SyncFilesResponse`に`files_deleted`追加
-- ⬜ UIの改善
-  - ⬜ 削除待ちファイルの表示スタイル（グレー、取り消し線）
-  - ⬜ 削除待ちファイルのツールチップ表示
+- ✅ 同期履歴の永続化（SQLite）
+  - ✅ SQLite依存関係追加（`rusqlite`, `r2d2`, `r2d2_sqlite`）
+  - ✅ データベーススキーマ設計
+    - ✅ `sync_history`テーブル（同期実行履歴）
+    - ✅ `synced_files`テーブル（最終同期時のファイル一覧）
+  - ✅ データベース初期化処理
+  - ✅ 同期履歴の保存・読み込みAPI実装
+- ✅ commands.rsの修正
+  - ✅ `get_sync_status()`で削除検出を有効化
+  - ✅ `sync_files()`で削除検出を有効化
+  - ✅ 同期成功時に履歴を更新
+  - ✅ エラーハンドリング強化
+- ✅ フロントエンド型定義の更新
+  - ✅ `SyncState`に`PendingLocalDeletion`と`PendingRemoteDeletion`を追加
+  - ✅ `SyncStatusResponse`に削除カウンター追加
+  - ✅ `SyncFilesResponse`に`files_deleted`追加
+- ✅ UIの改善
+  - ✅ 削除待ちファイルの表示スタイル（グレー、取り消し線）
+  - ✅ 削除待ちファイルのツールチップ表示
   - ⬜ （オプション）復元ボタンの実装
 - ⬜ 統合テスト作成
   - ⬜ 削除同期の完全なE2Eテスト

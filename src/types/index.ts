@@ -2,13 +2,11 @@
 
 export enum SyncState {
   InSync = "InSync",
-  Syncing = "Syncing",
   NeedsUpload = "NeedsUpload",
   NeedsDownload = "NeedsDownload",
   Conflict = "Conflict",
-  Error = "Error",
-  Excluded = "Excluded",
-  PendingDelete = "PendingDelete",
+  PendingLocalDeletion = "PendingLocalDeletion",
+  PendingRemoteDeletion = "PendingRemoteDeletion",
 }
 
 export interface FileInfo {
@@ -33,6 +31,8 @@ export interface SyncStatusResponse {
   needs_upload_count: number;
   needs_download_count: number;
   conflict_count: number;
+  pending_local_deletion_count: number;
+  pending_remote_deletion_count: number;
 }
 
 export interface SyncFilesResponse {
@@ -40,6 +40,7 @@ export interface SyncFilesResponse {
   files_uploaded: number;
   files_downloaded: number;
   conflicts_resolved: number;
+  files_deleted: number;
   message: string;
 }
 

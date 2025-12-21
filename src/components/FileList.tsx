@@ -4,10 +4,7 @@ import {
   ArrowUp,
   ArrowDown,
   AlertTriangle,
-  XCircle,
-  Ban,
   Trash2,
-  Loader2,
   File,
   ArrowUpDown,
 } from "lucide-react";
@@ -40,19 +37,15 @@ const getSyncStateIcon = (state: SyncState) => {
   switch (state) {
     case SyncState.InSync:
       return <CheckCircle2 className="h-4 w-4" style={{ color: "#22c55e" }} />;
-    case SyncState.Syncing:
-      return <Loader2 className="h-4 w-4 animate-spin" style={{ color: "#3b82f6" }} />;
     case SyncState.NeedsUpload:
       return <ArrowUp className="h-4 w-4" style={{ color: "#f59e0b" }} />;
     case SyncState.NeedsDownload:
       return <ArrowDown className="h-4 w-4" style={{ color: "#f59e0b" }} />;
     case SyncState.Conflict:
       return <AlertTriangle className="h-4 w-4" style={{ color: "#eab308" }} />;
-    case SyncState.Error:
-      return <XCircle className="h-4 w-4" style={{ color: "#ef4444" }} />;
-    case SyncState.Excluded:
-      return <Ban className="h-4 w-4" style={{ color: "#9ca3af" }} />;
-    case SyncState.PendingDelete:
+    case SyncState.PendingLocalDeletion:
+      return <Trash2 className="h-4 w-4" style={{ color: "#6b7280" }} />;
+    case SyncState.PendingRemoteDeletion:
       return <Trash2 className="h-4 w-4" style={{ color: "#6b7280" }} />;
     default:
       return <File className="h-4 w-4 text-gray-400" />;
@@ -63,20 +56,16 @@ const getSyncStateBadge = (state: SyncState) => {
   switch (state) {
     case SyncState.InSync:
       return <Badge className="bg-green-500 hover:bg-green-600">同期済み</Badge>;
-    case SyncState.Syncing:
-      return <Badge className="bg-blue-500 hover:bg-blue-600">同期中</Badge>;
     case SyncState.NeedsUpload:
       return <Badge className="bg-orange-500 hover:bg-orange-600">アップロード待ち</Badge>;
     case SyncState.NeedsDownload:
       return <Badge className="bg-orange-500 hover:bg-orange-600">ダウンロード待ち</Badge>;
     case SyncState.Conflict:
       return <Badge className="bg-yellow-500 hover:bg-yellow-600">競合</Badge>;
-    case SyncState.Error:
-      return <Badge className="bg-red-500 hover:bg-red-600">エラー</Badge>;
-    case SyncState.Excluded:
-      return <Badge className="bg-gray-500 hover:bg-gray-600">除外</Badge>;
-    case SyncState.PendingDelete:
-      return <Badge className="bg-gray-600 hover:bg-gray-700">削除待ち</Badge>;
+    case SyncState.PendingLocalDeletion:
+      return <Badge className="bg-gray-600 hover:bg-gray-700">ローカル削除待ち</Badge>;
+    case SyncState.PendingRemoteDeletion:
+      return <Badge className="bg-gray-600 hover:bg-gray-700">リモート削除待ち</Badge>;
     default:
       return <Badge variant="outline">不明</Badge>;
   }
@@ -110,20 +99,16 @@ const getTooltipContent = (file: ComparisonResultDto): string => {
   switch (file.state) {
     case SyncState.InSync:
       return `ローカルとクラウドが一致しています\n最終同期: ${localModified}`;
-    case SyncState.Syncing:
-      return `ファイルを同期中です...`;
     case SyncState.NeedsUpload:
       return `ローカルが新しいファイルです\nローカル: ${localModified}\nクラウド: ${remoteModified}\n次回同期でアップロードされます`;
     case SyncState.NeedsDownload:
       return `クラウドが新しいファイルです\nローカル: ${localModified}\nクラウド: ${remoteModified}\n次回同期でダウンロードされます`;
     case SyncState.Conflict:
       return `両方で異なる変更が行われています\nローカル: ${localModified}\nクラウド: ${remoteModified}\n同期時に両方保存されます`;
-    case SyncState.Error:
-      return `同期に失敗しました\n「再試行」ボタンで再度同期を試みる`;
-    case SyncState.Excluded:
-      return `同期対象外のファイルです`;
-    case SyncState.PendingDelete:
-      return `ローカルで削除されました\n削除日時: ${localModified}\n「復元」で取り消せます`;
+    case SyncState.PendingLocalDeletion:
+      return `ローカルで削除されました\nローカル: ${localModified}\nクラウド: ${remoteModified}\n次回同期でクラウドからも削除されます`;
+    case SyncState.PendingRemoteDeletion:
+      return `クラウドで削除されました\nローカル: ${localModified}\nクラウド: ${remoteModified}\n次回同期でローカルからも削除されます`;
     default:
       return "";
   }

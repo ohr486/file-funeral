@@ -874,7 +874,8 @@ mod tests {
             Some("etag1"),
         );
 
-        let result = compare_files_with_deletion(Some(&local), Some(&remote), Some(last_sync), true);
+        let result =
+            compare_files_with_deletion(Some(&local), Some(&remote), Some(last_sync), true);
 
         assert_eq!(result.state, SyncState::InSync);
     }
@@ -892,7 +893,8 @@ mod tests {
             Some("etag1"),
         );
 
-        let result = compare_files_with_deletion(Some(&local), Some(&remote), Some(last_sync), true);
+        let result =
+            compare_files_with_deletion(Some(&local), Some(&remote), Some(last_sync), true);
 
         assert_eq!(result.state, SyncState::NeedsUpload);
     }
@@ -933,8 +935,12 @@ mod tests {
         let result = detect_deletions(&local_files, &remote_files, &last_synced);
 
         assert_eq!(result.local_deletions.len(), 2);
-        assert!(result.local_deletions.contains(&"deleted_locally1.txt".to_string()));
-        assert!(result.local_deletions.contains(&"deleted_locally2.txt".to_string()));
+        assert!(result
+            .local_deletions
+            .contains(&"deleted_locally1.txt".to_string()));
+        assert!(result
+            .local_deletions
+            .contains(&"deleted_locally2.txt".to_string()));
         assert_eq!(result.remote_deletions.len(), 1);
         assert_eq!(result.remote_deletions[0], "keep2.txt");
     }

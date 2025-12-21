@@ -25,6 +25,9 @@ pub enum CommandError {
     #[error("Sync error: {0}")]
     Sync(#[from] SyncError),
 
+    #[error("Database error: {0}")]
+    Database(#[from] crate::db::DbError),
+
     #[error("Not configured: {0}")]
     NotConfigured(String),
 
@@ -563,21 +566,11 @@ pub async fn list_files(request: ListFilesRequest) -> CommandResult<ListFilesRes
     })
 }
 
-/// Get sync status for files
-///
-/// This command compares local files with remote files and returns the sync state
-/// for each file.
-///
-/// # Arguments
-/// * `local_path` - The local directory path to check
-/// * `remote_prefix` - The remote prefix to compare against
-///
-/// # Returns
-/// A status report showing which files need syncing
-#[tauri::command]
-pub async fn get_sync_status(
-    local_path: String,
-    remote_prefix: String,
+/// Internal implementation of get_sync_status
+async fn get_sync_status_impl(
+    local_path: &str,
+    remote_prefix: &str,
+    db_pool: &crate::db::DbPool,
 ) -> CommandResult<SyncStatusResponse> {
     log::info!(
         "get_sync_status called: local={}, remote={}",
@@ -600,10 +593,42 @@ pub async fn get_sync_status(
 
     // 2. List remote files
     let provider = create_s3_provider().await?;
-    let remote_files = provider.list(&remote_prefix).await?;
+    let remote_files = provider.list(remote_prefix).await?;
     log::info!("Found {} remote files", remote_files.len());
 
-    // 3. Build a map of all unique file paths
+    // 3. Get last sync information for deletion detection
+    let last_sync_time =
+        crate::db::sync_history::get_last_sync_time(db_pool, local_path, remote_prefix)
+            .ok()
+            .flatten();
+
+    let last_synced_files =
+        crate::db::sync_history::get_last_synced_files(db_pool, local_path, remote_prefix)
+            .unwrap_or_default();
+
+    log::info!(
+        "Last sync time: {:?}, Last synced files: {}",
+        last_sync_time,
+        last_synced_files.len()
+    );
+
+    // 4. Detect deletions if we have sync history
+    let deletion_result = if !last_synced_files.is_empty() {
+        sync::detect_deletions(&local_files, &remote_files, &last_synced_files)
+    } else {
+        sync::DeletionResult {
+            local_deletions: vec![],
+            remote_deletions: vec![],
+        }
+    };
+
+    log::info!(
+        "Detected {} local deletions, {} remote deletions",
+        deletion_result.local_deletions.len(),
+        deletion_result.remote_deletions.len()
+    );
+
+    // 5. Build a map of all unique file paths (including deleted files)
     let mut all_paths = HashSet::new();
     for file in &local_files {
         all_paths.insert(file.path.clone());
@@ -611,10 +636,17 @@ pub async fn get_sync_status(
     for file in &remote_files {
         all_paths.insert(file.path.clone());
     }
+    // Add deleted file paths
+    for path in &deletion_result.local_deletions {
+        all_paths.insert(path.clone());
+    }
+    for path in &deletion_result.remote_deletions {
+        all_paths.insert(path.clone());
+    }
 
     log::info!("Comparing {} unique file paths", all_paths.len());
 
-    // 4. Compare each file
+    // 6. Compare each file
     let mut comparisons = Vec::new();
     let mut in_sync_count = 0;
     let mut needs_upload_count = 0;
@@ -627,8 +659,16 @@ pub async fn get_sync_status(
         let local_info = local_files.iter().find(|f| f.path == path);
         let remote_info = remote_files.iter().find(|f| f.path == path);
 
-        // For v1.0, we don't track last_sync_time, so pass None
-        let comparison = sync::compare_files(local_info, remote_info, None);
+        // Check if this file was previously synced
+        let was_previously_synced = last_synced_files.contains(&path);
+
+        // Use deletion-aware comparison
+        let comparison = sync::compare_files_with_deletion(
+            local_info,
+            remote_info,
+            last_sync_time,
+            was_previously_synced,
+        );
 
         // Count by state
         match comparison.state {
@@ -664,20 +704,33 @@ pub async fn get_sync_status(
     })
 }
 
-/// Synchronize files between local and remote storage
+/// Get sync status for files
 ///
-/// This command performs the actual file synchronization:
-/// - Uploads files that exist only locally or are newer locally
-/// - Downloads files that exist only remotely or are newer remotely
-/// - Resolves conflicts using the "both-save" approach
+/// This command compares local files with remote files and returns the sync state
+/// for each file.
 ///
 /// # Arguments
-/// * `request` - Sync request containing local path and remote prefix
+/// * `local_path` - The local directory path to check
+/// * `remote_prefix` - The remote prefix to compare against
 ///
 /// # Returns
-/// A summary of the sync operation
+/// A status report showing which files need syncing
 #[tauri::command]
-pub async fn sync_files(request: SyncFilesRequest) -> CommandResult<SyncFilesResponse> {
+pub async fn get_sync_status(
+    local_path: String,
+    remote_prefix: String,
+    db_pool: tauri::State<'_, crate::db::DbPool>,
+) -> CommandResult<SyncStatusResponse> {
+    get_sync_status_impl(&local_path, &remote_prefix, &db_pool).await
+}
+
+/// Internal implementation of sync_files
+async fn sync_files_impl(
+    request: &SyncFilesRequest,
+    db_pool: &crate::db::DbPool,
+) -> CommandResult<SyncFilesResponse> {
+    let sync_started_at = chrono::Utc::now();
+
     log::info!(
         "sync_files called: local={}, remote={}",
         request.local_path,
@@ -694,7 +747,7 @@ pub async fn sync_files(request: SyncFilesRequest) -> CommandResult<SyncFilesRes
     let local_dir = PathBuf::from(&request.local_path);
 
     // 1. Get sync status (compare files)
-    let status = get_sync_status(request.local_path.clone(), request.remote_prefix.clone()).await?;
+    let status = get_sync_status_impl(&request.local_path, &request.remote_prefix, db_pool).await?;
     log::info!(
         "Sync analysis: {} comparisons, {} upload, {} download, {} conflicts",
         status.comparisons.len(),
@@ -712,6 +765,7 @@ pub async fn sync_files(request: SyncFilesRequest) -> CommandResult<SyncFilesRes
     let mut conflicts_resolved = 0;
     let mut files_deleted = 0;
     let mut errors = Vec::new();
+    let mut synced_files = Vec::new();
 
     for comparison in status.comparisons {
         let result =
@@ -730,6 +784,21 @@ pub async fn sync_files(request: SyncFilesRequest) -> CommandResult<SyncFilesRes
                     }
                     SyncAction::Deleted => files_deleted += 1,
                     SyncAction::Skipped => {}
+                }
+
+                // Record synced file (skip deleted files)
+                if !matches!(action, SyncAction::Deleted) {
+                    synced_files.push(crate::db::sync_history::SyncedFile {
+                        file_path: comparison.path.clone(),
+                        file_size: comparison
+                            .local_size
+                            .or(comparison.remote_size)
+                            .unwrap_or(0),
+                        last_modified: chrono::Utc::now(),
+                        etag: None,
+                        was_local: comparison.local_size.is_some(),
+                        was_remote: comparison.remote_size.is_some(),
+                    });
                 }
             }
             Err(e) => {
@@ -758,6 +827,33 @@ pub async fn sync_files(request: SyncFilesRequest) -> CommandResult<SyncFilesRes
 
     log::info!("{}", message);
 
+    // 4. Save sync history
+    let sync_completed_at = chrono::Utc::now();
+    let history = crate::db::sync_history::SyncHistory {
+        id: None,
+        sync_started_at,
+        sync_completed_at,
+        local_path: request.local_path.clone(),
+        remote_prefix: request.remote_prefix.clone(),
+        files_uploaded: files_uploaded as i32,
+        files_downloaded: files_downloaded as i32,
+        files_deleted: files_deleted as i32,
+        conflicts_resolved: conflicts_resolved as i32,
+        success: errors.is_empty(),
+        error_message: if errors.is_empty() {
+            None
+        } else {
+            Some(errors.join("; "))
+        },
+    };
+
+    if let Err(e) = crate::db::sync_history::save_sync_history(db_pool, &history, &synced_files) {
+        log::error!("Failed to save sync history: {}", e);
+        // Don't fail the entire sync operation just because we couldn't save history
+    } else {
+        log::info!("Sync history saved successfully");
+    }
+
     Ok(SyncFilesResponse {
         success: errors.is_empty(),
         files_uploaded,
@@ -766,6 +862,26 @@ pub async fn sync_files(request: SyncFilesRequest) -> CommandResult<SyncFilesRes
         files_deleted,
         message,
     })
+}
+
+/// Synchronize files between local and remote storage
+///
+/// This command performs the actual file synchronization:
+/// - Uploads files that exist only locally or are newer locally
+/// - Downloads files that exist only remotely or are newer remotely
+/// - Resolves conflicts using the "both-save" approach
+///
+/// # Arguments
+/// * `request` - Sync request containing local path and remote prefix
+///
+/// # Returns
+/// A summary of the sync operation
+#[tauri::command]
+pub async fn sync_files(
+    request: SyncFilesRequest,
+    db_pool: tauri::State<'_, crate::db::DbPool>,
+) -> CommandResult<SyncFilesResponse> {
+    sync_files_impl(&request, &db_pool).await
 }
 
 /// Action taken during sync
@@ -891,7 +1007,10 @@ async fn sync_single_file(
         }
 
         SyncState::PendingRemoteDeletion => {
-            log::info!("Deleting from local (deleted remotely): {}", comparison.path);
+            log::info!(
+                "Deleting from local (deleted remotely): {}",
+                comparison.path
+            );
 
             // Delete local file
             if local_path.exists() {
@@ -912,6 +1031,17 @@ async fn sync_single_file(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Helper function to create a test database pool
+    fn create_test_db_pool() -> crate::db::DbPool {
+        // Clean up any existing test database
+        let test_service = format!("file-funeral-test-{}", std::process::id());
+        if let Ok(db_path) = crate::db::get_db_path(&test_service) {
+            let _ = std::fs::remove_file(&db_path);
+        }
+
+        crate::db::init_db_pool(&test_service).expect("Failed to initialize test database")
+    }
 
     #[test]
     fn test_set_credentials_request_validation() {
@@ -1047,7 +1177,8 @@ mod tests {
     #[tokio::test]
     async fn test_set_credentials_validates_all_fields() {
         // Clean up any existing credentials before testing
-        let manager = crate::auth::CredentialManager::with_service_name("file-funeral-test".to_string());
+        let manager =
+            crate::auth::CredentialManager::with_service_name("file-funeral-test".to_string());
         let _ = manager.delete_aws_credentials();
 
         let test_cases = vec![
@@ -1084,7 +1215,8 @@ mod tests {
     async fn test_list_files_empty_result() {
         // Clean up any existing credentials before testing
         // We need to clean both test and production credentials to ensure test isolation
-        let test_manager = crate::auth::CredentialManager::with_service_name("file-funeral-test".to_string());
+        let test_manager =
+            crate::auth::CredentialManager::with_service_name("file-funeral-test".to_string());
         let prod_manager = crate::auth::CredentialManager::new();
 
         // Backup production credentials if they exist
@@ -1121,7 +1253,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_sync_status_validates_empty_path() {
-        let result = get_sync_status("".to_string(), "remote/".to_string()).await;
+        let db_pool = create_test_db_pool();
+        let result = get_sync_status_impl("", "remote/", &db_pool).await;
         assert!(result.is_err());
         match result {
             Err(CommandError::InvalidInput(msg)) => {
@@ -1133,12 +1266,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_sync_files_validates_empty_path() {
+        let db_pool = create_test_db_pool();
         let request = SyncFilesRequest {
             local_path: "".to_string(),
             remote_prefix: "remote/".to_string(),
         };
 
-        let result = sync_files(request).await;
+        let result = sync_files_impl(&request, &db_pool).await;
         assert!(result.is_err());
         match result {
             Err(CommandError::InvalidInput(msg)) => {
@@ -1401,7 +1535,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_sync_status_empty_path() {
-        let result = get_sync_status("".to_string(), "remote/".to_string()).await;
+        let db_pool = create_test_db_pool();
+        let result = get_sync_status_impl("", "remote/", &db_pool).await;
 
         assert!(result.is_err());
         match result {
@@ -1430,7 +1565,8 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let local_path = temp_dir.path().to_string_lossy().to_string();
 
-        let result = get_sync_status(local_path, "remote/".to_string()).await;
+        let db_pool = create_test_db_pool();
+        let result = get_sync_status_impl(&local_path, "remote/", &db_pool).await;
 
         // Should fail with NotConfigured error
         assert!(result.is_err());
@@ -1452,12 +1588,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_sync_files_empty_path() {
+        let db_pool = create_test_db_pool();
         let request = SyncFilesRequest {
             local_path: "".to_string(),
             remote_prefix: "remote/".to_string(),
         };
 
-        let result = sync_files(request).await;
+        let result = sync_files_impl(&request, &db_pool).await;
 
         assert!(result.is_err());
         match result {
@@ -1489,7 +1626,8 @@ mod tests {
             remote_prefix: "remote/".to_string(),
         };
 
-        let result = sync_files(request).await;
+        let db_pool = create_test_db_pool();
+        let result = sync_files_impl(&request, &db_pool).await;
 
         // Should fail with NotConfigured error
         assert!(result.is_err());
