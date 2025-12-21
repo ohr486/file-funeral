@@ -5,7 +5,7 @@ pub mod db;
 pub mod storage;
 pub mod sync;
 
-use tauri::Manager;
+use tauri::{AppHandle, Manager, RunEvent};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -24,6 +24,12 @@ pub fn run() {
             let db_pool = db::init_db_pool("file-funeral").expect("Failed to initialize database");
             app.manage(db_pool);
 
+            // Auto-sync on startup (Phase 3.4)
+            let app_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                perform_auto_sync_on_startup(app_handle).await;
+            });
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -33,9 +39,143 @@ pub fn run() {
             commands::list_files,
             commands::get_sync_status,
             commands::sync_files,
+            commands::save_sync_settings,
+            commands::get_sync_settings,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app_handle, event| {
+            // Handle app lifecycle events
+            if let RunEvent::Exit = event {
+                // Auto-sync on shutdown (Phase 3.4)
+                let handle = app_handle.clone();
+                tauri::async_runtime::block_on(async move {
+                    perform_auto_sync_on_shutdown(handle).await;
+                });
+            }
+        });
+}
+
+// ============================================================================
+// Auto-sync helper functions (Phase 3.4)
+// ============================================================================
+
+/// Perform auto-sync on application startup
+///
+/// This function:
+/// 1. Loads sync settings from the database
+/// 2. Checks if auto-sync on startup is enabled
+/// 3. If enabled, performs a sync operation
+async fn perform_auto_sync_on_startup(app_handle: AppHandle) {
+    log::info!("Checking auto-sync on startup");
+
+    // Get database pool from app state
+    let db_pool = match app_handle.try_state::<db::DbPool>() {
+        Some(pool) => pool.inner().clone(),
+        None => {
+            log::error!("Failed to get database pool from app state");
+            return;
+        }
+    };
+
+    // Load settings
+    let settings = match db::settings::load_settings(&db_pool) {
+        Ok(Some(settings)) => settings,
+        Ok(None) => {
+            log::info!("No sync settings configured, skipping auto-sync on startup");
+            return;
+        }
+        Err(e) => {
+            log::error!("Failed to load sync settings: {}", e);
+            return;
+        }
+    };
+
+    // Check if auto-sync on startup is enabled
+    if !settings.auto_sync_on_startup {
+        log::info!("Auto-sync on startup is disabled");
+        return;
+    }
+
+    log::info!(
+        "Auto-sync on startup enabled, syncing: {} <-> {}",
+        settings.local_path,
+        settings.remote_prefix
+    );
+
+    // Perform sync
+    let request = commands::SyncFilesRequest {
+        local_path: settings.local_path.clone(),
+        remote_prefix: settings.remote_prefix.clone(),
+    };
+
+    match commands::sync_files_impl(&request, &db_pool).await {
+        Ok(response) => {
+            log::info!("Auto-sync on startup completed: {}", response.message);
+        }
+        Err(e) => {
+            log::error!("Auto-sync on startup failed: {}", e);
+        }
+    }
+}
+
+/// Perform auto-sync on application shutdown
+///
+/// This function:
+/// 1. Loads sync settings from the database
+/// 2. Checks if auto-sync on shutdown is enabled
+/// 3. If enabled, performs a sync operation
+async fn perform_auto_sync_on_shutdown(app_handle: AppHandle) {
+    log::info!("Checking auto-sync on shutdown");
+
+    // Get database pool from app state
+    let db_pool = match app_handle.try_state::<db::DbPool>() {
+        Some(pool) => pool.inner().clone(),
+        None => {
+            log::error!("Failed to get database pool from app state");
+            return;
+        }
+    };
+
+    // Load settings
+    let settings = match db::settings::load_settings(&db_pool) {
+        Ok(Some(settings)) => settings,
+        Ok(None) => {
+            log::info!("No sync settings configured, skipping auto-sync on shutdown");
+            return;
+        }
+        Err(e) => {
+            log::error!("Failed to load sync settings: {}", e);
+            return;
+        }
+    };
+
+    // Check if auto-sync on shutdown is enabled
+    if !settings.auto_sync_on_shutdown {
+        log::info!("Auto-sync on shutdown is disabled");
+        return;
+    }
+
+    log::info!(
+        "Auto-sync on shutdown enabled, syncing: {} <-> {}",
+        settings.local_path,
+        settings.remote_prefix
+    );
+
+    // Perform sync
+    let request = commands::SyncFilesRequest {
+        local_path: settings.local_path.clone(),
+        remote_prefix: settings.remote_prefix.clone(),
+    };
+
+    match commands::sync_files_impl(&request, &db_pool).await {
+        Ok(response) => {
+            log::info!("Auto-sync on shutdown completed: {}", response.message);
+        }
+        Err(e) => {
+            log::error!("Auto-sync on shutdown failed: {}", e);
+        }
+    }
 }
 
 #[cfg(test)]
