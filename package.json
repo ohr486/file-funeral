@@ -20,7 +20,9 @@
     "lint:rs": "cd src-tauri && cargo clippy -- -D warnings",
     "lint:ts": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "lint:fix": "npm run lint:ts -- --fix && cd src-tauri && cargo fmt",
-    "format": "cd src-tauri && cargo fmt && npm run lint:ts -- --fix"
+    "format": "cd src-tauri && cargo fmt && npm run lint:ts -- --fix",
+    "db:inspect": "./scripts/inspect_db.sh",
+    "db:shell": "sqlite3 ~/.file-funeral/sync_history.db"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.2",

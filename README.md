@@ -69,6 +69,12 @@ npm run lint:fix
 
 # フォーマット
 npm run format
+
+# データベース確認
+npm run db:inspect
+
+# SQLite対話シェル
+npm run db:shell
 ```
 
 ## AWS認証情報の設定（macOS）
@@ -106,23 +112,165 @@ npm run format
 
 > **セキュリティ**: 認証情報は平文では保存されず、macOSのキーチェーンAPIを使用して暗号化されます。
 
+## 同期履歴データベース（SQLite）
+
+file-funeralは同期履歴をSQLiteデータベースに保存します。これにより削除検出やファイル変更の追跡が可能になります。
+
+### データベースの場所
+
+| 環境 | パス |
+|------|------|
+| 本番環境 | `~/.file-funeral/sync_history.db` |
+| テスト環境 | `/tmp/.file-funeral-test-{PID}/sync_history.db` |
+
+### データベースの確認方法
+
+#### 1. 簡易確認（推奨）
+
+```bash
+# データベースの概要を表示
+npm run db:inspect
+```
+
+以下の情報が表示されます：
+- スキーマバージョン
+- 同期操作の総数
+- 成功/失敗の統計
+- 最新10件の同期履歴
+- 追跡されているファイルの総数
+
+#### 2. 対話シェル
+
+```bash
+# SQLite対話シェルを開く
+npm run db:shell
+```
+
+シェル内で使えるコマンド：
+
+```sql
+-- テーブル一覧を表示
+.tables
+
+-- スキーマを表示
+.schema sync_history
+
+-- カラム名を表示する設定
+.headers on
+.mode column
+
+-- 最新の同期履歴を表示
+SELECT id, datetime(sync_completed_at) as time,
+       files_uploaded, files_downloaded, files_deleted, success
+FROM sync_history
+ORDER BY sync_completed_at DESC
+LIMIT 10;
+
+-- 特定の同期のファイル一覧
+SELECT file_path, file_size, was_local, was_remote
+FROM synced_files
+WHERE sync_history_id = 1;
+
+-- 終了
+.quit
+```
+
+#### 3. ワンライナー確認
+
+```bash
+# テーブル一覧
+sqlite3 ~/.file-funeral/sync_history.db ".tables"
+
+# 最新5件の同期履歴
+sqlite3 -header -column ~/.file-funeral/sync_history.db \
+  "SELECT id, datetime(sync_completed_at) as time,
+   files_uploaded as up, files_downloaded as down, files_deleted as del
+   FROM sync_history ORDER BY sync_completed_at DESC LIMIT 5;"
+
+# 同期履歴の総数
+sqlite3 ~/.file-funeral/sync_history.db \
+  "SELECT COUNT(*) FROM sync_history;"
+```
+
+### データベーススキーマ
+
+#### sync_history テーブル
+同期操作の履歴を記録します。
+
+| カラム | 型 | 説明 |
+|--------|-----|------|
+| id | INTEGER | 主キー |
+| sync_started_at | TEXT | 同期開始時刻 (RFC3339) |
+| sync_completed_at | TEXT | 同期完了時刻 (RFC3339) |
+| local_path | TEXT | ローカルパス |
+| remote_prefix | TEXT | リモートプレフィックス |
+| files_uploaded | INTEGER | アップロードされたファイル数 |
+| files_downloaded | INTEGER | ダウンロードされたファイル数 |
+| files_deleted | INTEGER | 削除されたファイル数 |
+| conflicts_resolved | INTEGER | 解決された競合数 |
+| success | INTEGER | 成功フラグ (0/1) |
+| error_message | TEXT | エラーメッセージ（失敗時） |
+
+#### synced_files テーブル
+最終同期時のファイル一覧を記録します（削除検出に使用）。
+
+| カラム | 型 | 説明 |
+|--------|-----|------|
+| id | INTEGER | 主キー |
+| sync_history_id | INTEGER | sync_historyテーブルへの外部キー |
+| file_path | TEXT | ファイルパス |
+| file_size | INTEGER | ファイルサイズ（バイト） |
+| last_modified | TEXT | 最終更新日時 (RFC3339) |
+| etag | TEXT | ETag（S3の場合） |
+| was_local | INTEGER | ローカルに存在したか (0/1) |
+| was_remote | INTEGER | リモートに存在したか (0/1) |
+
+### データのエクスポート
+
+```bash
+# CSV形式でエクスポート
+sqlite3 -header -csv ~/.file-funeral/sync_history.db \
+  "SELECT * FROM sync_history;" > sync_history.csv
+
+# JSON形式でエクスポート（jqが必要）
+sqlite3 ~/.file-funeral/sync_history.db \
+  "SELECT json_object(
+    'id', id,
+    'completed', sync_completed_at,
+    'uploaded', files_uploaded,
+    'downloaded', files_downloaded
+   ) FROM sync_history;" | jq -s '.'
+```
+
 ## プロジェクト構造
 
 ```
 file-funeral/
-├── src-tauri/          # Rustバックエンド
+├── src-tauri/              # Rustバックエンド
 │   ├── src/
-│   │   ├── main.rs
-│   │   └── lib.rs
-│   ├── tests/          # 統合テスト
+│   │   ├── main.rs         # エントリポイント
+│   │   ├── lib.rs          # メインロジック
+│   │   ├── commands.rs     # Tauriコマンド
+│   │   ├── auth/           # 認証情報管理
+│   │   ├── storage/        # ストレージ抽象化層
+│   │   ├── sync/           # 同期エンジン
+│   │   └── db/             # データベース（SQLite）
+│   ├── tests/              # 統合テスト
 │   ├── Cargo.toml
 │   └── clippy.toml
-├── src/                # Reactフロントエンド
+├── src/                    # Reactフロントエンド
 │   ├── App.tsx
-│   └── main.tsx
-├── REQUIREMENTS.md     # 詳細要件定義
-├── CLAUDE.md          # 開発ガイド
-└── TODO.md            # 実装タスク一覧
+│   ├── main.tsx
+│   ├── components/         # Reactコンポーネント
+│   ├── pages/              # ページコンポーネント
+│   └── types/              # TypeScript型定義
+├── scripts/                # ユーティリティスクリプト
+│   └── inspect_db.sh       # SQLiteデータベース確認スクリプト
+├── ~/.file-funeral/        # アプリケーションデータ（ホームディレクトリ）
+│   └── sync_history.db     # 同期履歴データベース
+├── REQUIREMENTS.md         # 詳細要件定義
+├── CLAUDE.md              # 開発ガイド
+└── TODO.md                # 実装タスク一覧
 ```
 
 ## ドキュメント
