@@ -456,7 +456,11 @@ fn walk_directory(
                 CommandError::OperationFailed(format!("Failed to get relative path: {}", e))
             })?;
 
-            let path_str = relative_path.to_string_lossy().to_string();
+            // Normalize path separators to forward slashes (S3 uses forward slashes)
+            let path_str = relative_path
+                .to_string_lossy()
+                .to_string()
+                .replace('\\', "/");
 
             // Convert modified time to DateTime<Utc>
             let modified = metadata.modified().map_err(|e| {
@@ -625,8 +629,24 @@ async fn get_sync_status_impl(
 
     // 2. List remote files
     let provider = create_s3_provider().await?;
-    let remote_files = provider.list(remote_prefix).await?;
+    let mut remote_files = provider.list(remote_prefix).await?;
     log::info!("Found {} remote files", remote_files.len());
+
+    // Normalize remote file paths by stripping the prefix
+    // This makes remote paths relative (matching local paths)
+    let prefix_to_strip = if remote_prefix.is_empty() {
+        String::new()
+    } else {
+        format!("{}/", remote_prefix.trim_end_matches('/'))
+    };
+
+    if !prefix_to_strip.is_empty() {
+        for file in &mut remote_files {
+            if let Some(stripped) = file.path.strip_prefix(&prefix_to_strip) {
+                file.path = stripped.to_string();
+            }
+        }
+    }
 
     // 3. Get last sync information for deletion detection
     let last_sync_time =
