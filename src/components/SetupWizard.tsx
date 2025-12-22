@@ -202,7 +202,7 @@ export function SetupWizard({ onComplete, onSkip }: SetupWizardProps) {
       case 3:
         return syncFolder !== "";
       case 4:
-        return testStatus === "success";
+        return true;
       case 5:
         return true;
       default:
@@ -455,8 +455,9 @@ export function SetupWizard({ onComplete, onSkip }: SetupWizardProps) {
                 {syncFolder && (
                   <Alert>
                     <CheckCircle2 className="h-4 w-4" />
-                    <AlertDescription>
-                      Selected: {syncFolder}
+                    <AlertDescription className="break-all">
+                      <span className="font-medium">Selected:</span>{" "}
+                      <span className="text-xs">{syncFolder}</span>
                     </AlertDescription>
                   </Alert>
                 )}
@@ -504,9 +505,9 @@ export function SetupWizard({ onComplete, onSkip }: SetupWizardProps) {
                     <span className="text-sm font-medium">Bucket:</span>
                     <span className="text-sm text-muted-foreground">{bucketName}</span>
                   </div>
-                  <div className="flex justify-between items-center">
+                  <div className="flex flex-col gap-1">
                     <span className="text-sm font-medium">Sync Folder:</span>
-                    <span className="text-sm text-muted-foreground truncate max-w-xs">
+                    <span className="text-xs text-muted-foreground break-all">
                       {syncFolder}
                     </span>
                   </div>
@@ -562,9 +563,9 @@ export function SetupWizard({ onComplete, onSkip }: SetupWizardProps) {
                     <span>S3 Bucket:</span>
                     <span className="font-mono">{bucketName}</span>
                   </div>
-                  <div className="flex justify-between">
+                  <div className="flex flex-col gap-1">
                     <span>Sync Folder:</span>
-                    <span className="font-mono truncate max-w-[200px]" title={syncFolder}>
+                    <span className="font-mono text-xs break-all" title={syncFolder}>
                       {syncFolder}
                     </span>
                   </div>

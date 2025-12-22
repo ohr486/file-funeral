@@ -386,12 +386,12 @@ describe("SetupWizard", () => {
       expect(screen.getByText("my-bucket")).toBeInTheDocument();
     });
 
-    it("should disable next button before connection test", () => {
+    it("should enable next button to allow connection test", () => {
       const nextButton = screen.getByRole("button", { name: /Next/i });
-      expect(nextButton).toBeDisabled();
+      expect(nextButton).not.toBeDisabled();
     });
 
-    it.skip("should test connection when next is clicked", async () => {
+    it("should test connection when next is clicked", async () => {
       const user = userEvent.setup();
 
       const nextButton = screen.getByRole("button", { name: /Next/i });
@@ -417,7 +417,7 @@ describe("SetupWizard", () => {
       });
     });
 
-    it.skip("should enable next button when connection test succeeds", async () => {
+    it("should proceed to step 5 when connection test succeeds", async () => {
       const user = userEvent.setup();
 
       const nextButton = screen.getByRole("button", { name: /Next/i });
@@ -438,16 +438,14 @@ describe("SetupWizard", () => {
 
       await user.click(nextButton);
 
+      // After successful connection test, should proceed to step 5
       await waitFor(() => {
-        expect(screen.getByText("Connected successfully")).toBeInTheDocument();
-      });
-
-      await waitFor(() => {
-        expect(nextButton).not.toBeDisabled();
+        expect(screen.getByText("Setup Complete!")).toBeInTheDocument();
+        expect(screen.getByText("Step 5 of 5")).toBeInTheDocument();
       });
     });
 
-    it.skip("should not proceed when connection test fails", async () => {
+    it("should not proceed when connection test fails", async () => {
       const user = userEvent.setup();
 
       const nextButton = screen.getByRole("button", { name: /Next/i });
@@ -472,7 +470,7 @@ describe("SetupWizard", () => {
 
       // Should still be on step 4
       expect(screen.getByText("Step 4 of 5")).toBeInTheDocument();
-      expect(nextButton).toBeDisabled();
+      expect(screen.getByText("Test Connection")).toBeInTheDocument();
     });
   });
 
