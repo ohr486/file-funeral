@@ -68,13 +68,11 @@ impl CloudStorageProvider for S3Provider {
         }
 
         // メタデータを設定
+        // Note: S3 automatically calculates MD5 hash and sets it as ETag
+        // No need to set custom metadata for etag
         request = request
             .metadata("last-modified", metadata.last_modified.to_rfc3339())
             .metadata("size", metadata.size.to_string());
-
-        if let Some(etag) = metadata.etag {
-            request = request.metadata("etag", etag);
-        }
 
         // アップロードを実行
         request.send().await.map_err(|e| {
