@@ -24,7 +24,12 @@ export function MainPage({ onSettingsClick }: MainPageProps) {
     if (savedSyncFolder) {
       setLocalPath(savedSyncFolder);
       // Use the last folder name as the remote prefix
-      const folderName = savedSyncFolder.split(/[\\/]/).pop() || "files";
+      // Remove trailing slashes and filter out empty parts
+      const pathParts = savedSyncFolder
+        .replace(/[\\/]+$/, "") // Remove trailing slashes
+        .split(/[\\/]/)
+        .filter(part => part.length > 0);
+      const folderName = pathParts.length > 0 ? pathParts[pathParts.length - 1] : "files";
       setRemotePrefix(folderName + "/");
     }
   }, []);
@@ -40,7 +45,12 @@ export function MainPage({ onSettingsClick }: MainPageProps) {
       if (selected && typeof selected === "string") {
         setLocalPath(selected);
         // Use the last folder name as the remote prefix
-        const folderName = selected.split(/[\\/]/).pop() || "files";
+        // Remove trailing slashes and filter out empty parts
+        const pathParts = selected
+          .replace(/[\\/]+$/, "") // Remove trailing slashes
+          .split(/[\\/]/)
+          .filter(part => part.length > 0);
+        const folderName = pathParts.length > 0 ? pathParts[pathParts.length - 1] : "files";
         setRemotePrefix(folderName + "/");
         // Save to localStorage
         localStorage.setItem("syncFolder", selected);
@@ -81,6 +91,8 @@ export function MainPage({ onSettingsClick }: MainPageProps) {
         needs_upload_count: 0,
         needs_download_count: 0,
         conflict_count: 0,
+        pending_local_deletion_count: 0,
+        pending_remote_deletion_count: 0,
       });
     } finally {
       setIsLoading(false);
