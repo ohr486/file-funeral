@@ -195,13 +195,11 @@ export function FileList({ files }: FileListProps) {
         >
           <option value="all">すべて</option>
           <option value={SyncState.InSync}>同期済み</option>
-          <option value={SyncState.Syncing}>同期中</option>
           <option value={SyncState.NeedsUpload}>アップロード待ち</option>
           <option value={SyncState.NeedsDownload}>ダウンロード待ち</option>
           <option value={SyncState.Conflict}>競合</option>
-          <option value={SyncState.Error}>エラー</option>
-          <option value={SyncState.Excluded}>除外</option>
-          <option value={SyncState.PendingDelete}>削除待ち</option>
+          <option value={SyncState.PendingLocalDeletion}>ローカル削除待ち</option>
+          <option value={SyncState.PendingRemoteDeletion}>リモート削除待ち</option>
         </select>
       </div>
 
@@ -253,20 +251,18 @@ export function FileList({ files }: FileListProps) {
               </TableRow>
             ) : (
               filteredAndSortedFiles.map((file) => {
-                // 背景色の設定（競合とエラー）
+                // 背景色の設定（競合）
                 const bgColor =
                   file.state === SyncState.Conflict ? "#fef9c3" :
-                  file.state === SyncState.Error ? "#fee2e2" :
                   undefined;
 
-                // グレーアウト（削除待ちと除外）
+                // グレーアウト（削除待ち）
                 const isGrayedOut =
-                  file.state === SyncState.PendingDelete ||
-                  file.state === SyncState.Excluded;
+                  file.state === SyncState.PendingLocalDeletion ||
+                  file.state === SyncState.PendingRemoteDeletion;
 
                 const textColor = isGrayedOut ? "#9ca3af" : undefined;
-                const textDecoration = file.state === SyncState.PendingDelete ? "line-through" : undefined;
-                const fontSize = file.state === SyncState.Excluded ? "0.9em" : undefined;
+                const textDecoration = isGrayedOut ? "line-through" : undefined;
 
                 return (
                   <TooltipProvider key={file.path}>
