@@ -274,8 +274,7 @@ export function FileList({ files }: FileListProps) {
                             className="font-medium"
                             style={{
                               color: textColor,
-                              textDecoration,
-                              fontSize
+                              textDecoration
                             }}
                           >
                             {file.path}
