@@ -267,12 +267,28 @@ pub fn resolve_conflict(original_path: &str) -> Result<ConflictResolution, SyncE
     })
 }
 
-/// Get the hostname of the current machine
+/// Get the hostname of the current machine, sanitized for use in filenames
 fn get_hostname() -> Result<String, SyncError> {
-    hostname::get()
+    let hostname = hostname::get()
         .map_err(|_| SyncError::HostnameError)?
         .into_string()
-        .map_err(|_| SyncError::HostnameError)
+        .map_err(|_| SyncError::HostnameError)?;
+
+    // Sanitize hostname for use in filenames
+    // Remove .local suffix if present (common on macOS)
+    let hostname = hostname.strip_suffix(".local").unwrap_or(&hostname);
+
+    // Replace dots and other special characters with hyphens
+    let sanitized = hostname.replace(['.', ' ', '/', '\\'], "-");
+
+    // Limit length to 30 characters
+    let sanitized = if sanitized.len() > 30 {
+        &sanitized[..30]
+    } else {
+        &sanitized
+    };
+
+    Ok(sanitized.to_string())
 }
 
 /// Deletion detection result
