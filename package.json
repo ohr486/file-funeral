@@ -22,7 +22,12 @@
     "lint:fix": "npm run lint:ts -- --fix && cd src-tauri && cargo fmt",
     "format": "cd src-tauri && cargo fmt && npm run lint:ts -- --fix",
     "db:inspect": "./scripts/inspect_db.sh",
-    "db:shell": "sqlite3 ~/.file-funeral/sync_history.db"
+    "db:shell": "sqlite3 ~/.file-funeral/sync_history.db",
+    "check:size": "du -sh . && echo '\n--- Directory Breakdown ---' && du -sh src-tauri/target node_modules dist 2>/dev/null | sort -h || echo 'No build artifacts found'",
+    "clean": "npm run clean:target && npm run clean:node_modules && npm run clean:dist && echo '\n✓ Cleanup complete. Run npm install to restore dependencies.'",
+    "clean:target": "rm -rf src-tauri/target && echo '✓ Removed src-tauri/target'",
+    "clean:node_modules": "rm -rf node_modules && echo '✓ Removed node_modules'",
+    "clean:dist": "rm -rf dist && echo '✓ Removed dist'"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.2",
