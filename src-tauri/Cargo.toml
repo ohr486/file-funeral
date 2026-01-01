@@ -1,10 +1,10 @@
 [package]
 name = "app"
-version = "0.1.0"
-description = "A Tauri App"
-authors = ["you"]
-license = ""
-repository = ""
+version = "1.0.0"
+description = "Cloud file synchronization desktop application with AWS S3 support"
+authors = ["ohr486"]
+license = "MIT"
+repository = "https://github.com/ohr486/file-funeral"
 edition = "2021"
 rust-version = "1.77.2"
 
