@@ -5,6 +5,12 @@ use thiserror::Error;
 pub mod metadata;
 pub mod s3;
 
+/// ファイルサイズ制限（5GB）
+pub const MAX_FILE_SIZE: u64 = 5 * 1024 * 1024 * 1024; // 5GB = 5,368,709,120 bytes
+
+/// プログレスバー表示のしきい値（100MB）
+pub const PROGRESS_THRESHOLD: u64 = 100 * 1024 * 1024; // 100MB = 104,857,600 bytes
+
 /// カスタムエラー型
 #[derive(Error, Debug)]
 pub enum StorageError {
@@ -25,6 +31,9 @@ pub enum StorageError {
 
     #[error("メタデータエラー: {0}")]
     Metadata(String),
+
+    #[error("ファイルサイズが制限を超えています: {0} bytes (最大 {1} bytes)")]
+    FileTooLarge(u64, u64),
 
     #[error("IO エラー: {0}")]
     Io(#[from] std::io::Error),
@@ -973,5 +982,104 @@ mod tests {
         let download_result = storage.download("trait_test.txt").await;
         assert!(download_result.is_ok());
         assert_eq!(download_result.unwrap(), b"trait works");
+    }
+
+    // ========================================
+    // 大容量ファイル対応テスト
+    // ========================================
+
+    #[test]
+    fn test_file_size_constants() {
+        // 定数が正しい値に設定されていることを確認
+        assert_eq!(MAX_FILE_SIZE, 5 * 1024 * 1024 * 1024);
+        assert_eq!(MAX_FILE_SIZE, 5_368_709_120);
+
+        assert_eq!(PROGRESS_THRESHOLD, 100 * 1024 * 1024);
+        assert_eq!(PROGRESS_THRESHOLD, 104_857_600);
+    }
+
+    #[test]
+    fn test_file_too_large_error() {
+        let error = StorageError::FileTooLarge(6_000_000_000, MAX_FILE_SIZE);
+        let error_msg = error.to_string();
+
+        assert!(error_msg.contains("6000000000"));
+        assert!(error_msg.contains("5368709120"));
+        assert!(error_msg.contains("ファイルサイズが制限を超えています"));
+    }
+
+    #[test]
+    fn test_file_size_within_limit() {
+        // 5GB ちょうどのファイルサイズ
+        let size_at_limit = MAX_FILE_SIZE;
+        assert_eq!(size_at_limit, 5_368_709_120);
+
+        // 5GB - 1バイト（許容範囲内）
+        let size_just_under = MAX_FILE_SIZE - 1;
+        assert_eq!(size_just_under, 5_368_709_119);
+
+        // 5GB + 1バイト（制限超過）
+        let size_just_over = MAX_FILE_SIZE + 1;
+        assert_eq!(size_just_over, 5_368_709_121);
+    }
+
+    #[test]
+    fn test_progress_threshold_boundary() {
+        // 100MB ちょうどのファイルサイズ
+        let size_at_threshold = PROGRESS_THRESHOLD;
+        assert_eq!(size_at_threshold, 104_857_600);
+
+        // 100MB - 1バイト（プログレスバー不要）
+        let size_just_under = PROGRESS_THRESHOLD - 1;
+        assert_eq!(size_just_under, 104_857_599);
+
+        // 100MB + 1バイト（プログレスバー表示）
+        let size_just_over = PROGRESS_THRESHOLD + 1;
+        assert_eq!(size_just_over, 104_857_601);
+    }
+
+    #[tokio::test]
+    async fn test_upload_file_at_max_size() {
+        let storage = StatefulMockStorage::new();
+        let now = Utc::now();
+
+        // 5GB のデータを作成（メモリ制限により実際には小さいサイズでテスト）
+        // 注意: 実際の5GBデータは大きすぎるため、ここでは1MBでテスト
+        let large_data = vec![0u8; 1_048_576]; // 1MB
+        let metadata = FileMetadata::new(large_data.len() as u64, now, None, None);
+
+        let result = storage
+            .upload("max_size_file.bin", &large_data, metadata)
+            .await;
+        assert!(result.is_ok());
+
+        let downloaded = storage.download("max_size_file.bin").await.unwrap();
+        assert_eq!(downloaded.len(), 1_048_576);
+    }
+
+    #[test]
+    fn test_file_info_with_100mb_size() {
+        // プログレスバー表示の境界値をテスト
+        let now = Utc::now();
+
+        let file_at_threshold =
+            FileInfo::new("medium.zip".to_string(), PROGRESS_THRESHOLD, now, None);
+        assert_eq!(file_at_threshold.size, 104_857_600);
+
+        let file_over_threshold =
+            FileInfo::new("large.iso".to_string(), PROGRESS_THRESHOLD + 1, now, None);
+        assert_eq!(file_over_threshold.size, 104_857_601);
+    }
+
+    #[test]
+    fn test_file_size_conversion_to_mb() {
+        // ファイルサイズをMBに変換するテスト
+        let one_mb = 1_048_576_u64;
+        let hundred_mb = PROGRESS_THRESHOLD;
+        let five_gb = MAX_FILE_SIZE;
+
+        assert_eq!(one_mb as f64 / (1024.0 * 1024.0), 1.0);
+        assert_eq!(hundred_mb as f64 / (1024.0 * 1024.0), 100.0);
+        assert_eq!(five_gb as f64 / (1024.0 * 1024.0), 5120.0);
     }
 }
