@@ -17,6 +17,9 @@ pub enum StorageError {
     #[error("ネットワークエラー: {0}")]
     Network(String),
 
+    #[error("タイムアウトエラー: {0}")]
+    Timeout(String),
+
     #[error("認証エラー: {0}")]
     Authentication(String),
 
@@ -629,8 +632,12 @@ mod tests {
     fn test_storage_error_display() {
         let errors = vec![
             (
-                StorageError::Network("Timeout".to_string()),
-                "ネットワークエラー: Timeout",
+                StorageError::Network("Connection refused".to_string()),
+                "ネットワークエラー: Connection refused",
+            ),
+            (
+                StorageError::Timeout("Request timed out".to_string()),
+                "タイムアウトエラー: Request timed out",
             ),
             (
                 StorageError::Authentication("Invalid token".to_string()),
@@ -651,6 +658,10 @@ mod tests {
             (
                 StorageError::Metadata("No metadata".to_string()),
                 "メタデータエラー: No metadata",
+            ),
+            (
+                StorageError::FileTooLarge(6_000_000_000, MAX_FILE_SIZE),
+                "ファイルサイズが制限を超えています: 6000000000 bytes (最大 5368709120 bytes)",
             ),
             (
                 StorageError::Other("Unknown".to_string()),

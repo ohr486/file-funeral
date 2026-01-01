@@ -2,6 +2,8 @@
 pub mod auth;
 pub mod commands;
 pub mod db;
+pub mod logging;
+pub mod retry;
 pub mod storage;
 pub mod sync;
 
