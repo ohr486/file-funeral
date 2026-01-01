@@ -450,6 +450,15 @@ fn walk_directory(
             CommandError::OperationFailed(format!("Failed to read metadata for {:?}: {}", path, e))
         })?;
 
+        // Skip symbolic links (Phase 4.2)
+        if metadata.file_type().is_symlink() {
+            log::warn!(
+                "Skipping symbolic link: {:?} (symbolic links are not supported)",
+                path
+            );
+            continue;
+        }
+
         if metadata.is_file() {
             // Get relative path from base
             let relative_path = path.strip_prefix(base_path).map_err(|e| {
@@ -493,20 +502,29 @@ fn walk_directory(
 }
 
 /// Check if a file should be skipped during sync
+///
+/// Default exclusion patterns (Phase 4.2):
+/// - Hidden files (starting with '.')
+/// - `.DS_Store` (macOS)
+/// - `Thumbs.db` (Windows)
+/// - `*.tmp` (temporary files)
+/// - `*.swp` (Vim swap files)
+/// - `*~` (backup files)
 fn should_skip_file(file_name: &str) -> bool {
-    // Default exclusion patterns
-    let skip_patterns = [".DS_Store", "Thumbs.db", ".tmp", ".swp", "~"];
-
     // Skip hidden files (starting with .)
     if file_name.starts_with('.') {
         return true;
     }
 
-    // Skip files matching patterns
-    for pattern in &skip_patterns {
-        if file_name.ends_with(pattern) {
-            return true;
-        }
+    // Default exclusion patterns
+    // Check exact matches
+    if file_name == ".DS_Store" || file_name == "Thumbs.db" {
+        return true;
+    }
+
+    // Check suffix patterns for temporary and backup files
+    if file_name.ends_with(".tmp") || file_name.ends_with(".swp") || file_name.ends_with('~') {
+        return true;
     }
 
     false
