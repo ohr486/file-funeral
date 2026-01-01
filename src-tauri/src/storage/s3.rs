@@ -1,4 +1,5 @@
 use super::{CloudStorageProvider, FileInfo, FileMetadata, Result, StorageError};
+use crate::retry::{is_network_error, retry_with_backoff};
 use aws_config::BehaviorVersion;
 use aws_sdk_s3::{primitives::ByteStream, Client};
 use chrono::Utc;
@@ -53,170 +54,245 @@ impl S3Provider {
 #[async_trait::async_trait]
 impl CloudStorageProvider for S3Provider {
     async fn upload(&self, path: &str, data: &[u8], metadata: FileMetadata) -> Result<()> {
-        let body = ByteStream::from(data.to_vec());
+        let path = path.to_string();
+        let bucket = self.bucket.clone();
+        let client = self.client.clone();
+        let data_vec = data.to_vec();
+        let metadata_clone = metadata.clone();
 
-        let mut request = self
-            .client
-            .put_object()
-            .bucket(&self.bucket)
-            .key(path)
-            .body(body);
+        // Retry with exponential backoff for network errors
+        retry_with_backoff(|| async {
+            let body = ByteStream::from(data_vec.clone());
 
-        // コンテンツタイプを設定（存在する場合）
-        if let Some(content_type) = metadata.content_type {
-            request = request.content_type(content_type);
-        }
+            let mut request = client.put_object().bucket(&bucket).key(&path).body(body);
 
-        // メタデータを設定
-        // Note: S3 automatically calculates MD5 hash and sets it as ETag
-        // No need to set custom metadata for etag
-        request = request
-            .metadata("last-modified", metadata.last_modified.to_rfc3339())
-            .metadata("size", metadata.size.to_string());
+            // コンテンツタイプを設定（存在する場合）
+            if let Some(ref content_type) = metadata_clone.content_type {
+                request = request.content_type(content_type.clone());
+            }
 
-        // アップロードを実行
-        request.send().await.map_err(|e| {
-            StorageError::Upload(format!("S3へのアップロードに失敗しました: {}", e))
-        })?;
+            // メタデータを設定
+            // Note: S3 automatically calculates MD5 hash and sets it as ETag
+            // No need to set custom metadata for etag
+            request = request
+                .metadata("last-modified", metadata_clone.last_modified.to_rfc3339())
+                .metadata("size", metadata_clone.size.to_string());
 
-        Ok(())
+            // アップロードを実行
+            request.send().await.map_err(|e| {
+                let error_msg = format!("S3へのアップロードに失敗しました: {}", e);
+                if is_network_error(&error_msg) {
+                    log::warn!("Network error during upload, will retry: {}", error_msg);
+                }
+                StorageError::Upload(error_msg)
+            })?;
+
+            Ok(())
+        })
+        .await
     }
 
     async fn download(&self, path: &str) -> Result<Vec<u8>> {
-        let response = self
-            .client
-            .get_object()
-            .bucket(&self.bucket)
-            .key(path)
-            .send()
-            .await
-            .map_err(|e| {
-                // NotFoundエラーを特別に処理
-                if e.to_string().contains("NoSuchKey") {
-                    StorageError::NotFound(path.to_string())
-                } else {
-                    StorageError::Download(format!("S3からのダウンロードに失敗しました: {}", e))
-                }
-            })?;
+        let path = path.to_string();
+        let bucket = self.bucket.clone();
+        let client = self.client.clone();
 
-        // ボディをバイト配列に変換
-        let body_bytes = response
-            .body
-            .collect()
-            .await
-            .map_err(|e| {
-                StorageError::Download(format!("レスポンスボディの読み取りに失敗しました: {}", e))
-            })?
-            .into_bytes();
+        // Retry with exponential backoff for network errors
+        retry_with_backoff(|| async {
+            let response = client
+                .get_object()
+                .bucket(&bucket)
+                .key(&path)
+                .send()
+                .await
+                .map_err(|e| {
+                    let error_msg = e.to_string();
+                    // NotFoundエラーを特別に処理（リトライしない）
+                    if error_msg.contains("NoSuchKey") {
+                        StorageError::NotFound(path.clone())
+                    } else {
+                        let download_error =
+                            format!("S3からのダウンロードに失敗しました: {}", error_msg);
+                        if is_network_error(&download_error) {
+                            log::warn!(
+                                "Network error during download, will retry: {}",
+                                download_error
+                            );
+                        }
+                        StorageError::Download(download_error)
+                    }
+                })?;
 
-        Ok(body_bytes.to_vec())
+            // ボディをバイト配列に変換
+            let body_bytes = response
+                .body
+                .collect()
+                .await
+                .map_err(|e| {
+                    let error_msg = format!("レスポンスボディの読み取りに失敗しました: {}", e);
+                    if is_network_error(&error_msg) {
+                        log::warn!(
+                            "Network error while reading body, will retry: {}",
+                            error_msg
+                        );
+                    }
+                    StorageError::Download(error_msg)
+                })?
+                .into_bytes();
+
+            Ok(body_bytes.to_vec())
+        })
+        .await
     }
 
     async fn list(&self, prefix: &str) -> Result<Vec<FileInfo>> {
-        let mut file_list = Vec::new();
-        let mut continuation_token: Option<String> = None;
+        let prefix = prefix.to_string();
+        let bucket = self.bucket.clone();
+        let client = self.client.clone();
 
-        // ページネーションを使用してすべてのオブジェクトを取得
-        loop {
-            let mut request = self
-                .client
-                .list_objects_v2()
-                .bucket(&self.bucket)
-                .prefix(prefix)
-                .max_keys(1000);
+        // Retry with exponential backoff for network errors
+        retry_with_backoff(|| async {
+            let mut file_list = Vec::new();
+            let mut continuation_token: Option<String> = None;
 
-            if let Some(token) = continuation_token {
-                request = request.continuation_token(token);
-            }
+            // ページネーションを使用してすべてのオブジェクトを取得
+            loop {
+                let mut request = client
+                    .list_objects_v2()
+                    .bucket(&bucket)
+                    .prefix(&prefix)
+                    .max_keys(1000);
 
-            let response = request.send().await.map_err(|e| {
-                StorageError::Other(format!("S3オブジェクトのリスト取得に失敗しました: {}", e))
-            })?;
+                if let Some(ref token) = continuation_token {
+                    request = request.continuation_token(token.clone());
+                }
 
-            // 次のページがあるかチェック（先にチェックしてムーブ問題を回避）
-            let is_truncated = response.is_truncated().unwrap_or(false);
-            let next_token = response.next_continuation_token;
+                let response = request.send().await.map_err(|e| {
+                    let error_msg = format!("S3オブジェクトのリスト取得に失敗しました: {}", e);
+                    if is_network_error(&error_msg) {
+                        log::warn!("Network error during list, will retry: {}", error_msg);
+                    }
+                    StorageError::Other(error_msg)
+                })?;
 
-            // オブジェクトを処理
-            if let Some(contents) = response.contents {
-                for object in contents {
-                    if let Some(key) = object.key() {
-                        let size = object.size().unwrap_or(0) as u64;
-                        let last_modified = object
-                            .last_modified()
-                            .and_then(|dt| {
-                                // AWS DateTimeをUNIXタイムスタンプ経由で変換
-                                let secs = dt.secs();
-                                let nanos = dt.subsec_nanos();
-                                chrono::DateTime::from_timestamp(secs, nanos)
-                            })
-                            .unwrap_or_else(Utc::now);
-                        // AWS S3 ETag is surrounded by quotes, remove them to match local MD5 hash format
-                        let etag = object.e_tag().map(|s| s.trim_matches('"').to_string());
+                // 次のページがあるかチェック（先にチェックしてムーブ問題を回避）
+                let is_truncated = response.is_truncated().unwrap_or(false);
+                let next_token = response.next_continuation_token;
 
-                        file_list.push(FileInfo::new(key.to_string(), size, last_modified, etag));
+                // オブジェクトを処理
+                if let Some(contents) = response.contents {
+                    for object in contents {
+                        if let Some(key) = object.key() {
+                            let size = object.size().unwrap_or(0) as u64;
+                            let last_modified = object
+                                .last_modified()
+                                .and_then(|dt| {
+                                    // AWS DateTimeをUNIXタイムスタンプ経由で変換
+                                    let secs = dt.secs();
+                                    let nanos = dt.subsec_nanos();
+                                    chrono::DateTime::from_timestamp(secs, nanos)
+                                })
+                                .unwrap_or_else(Utc::now);
+                            // AWS S3 ETag is surrounded by quotes, remove them to match local MD5 hash format
+                            let etag = object.e_tag().map(|s| s.trim_matches('"').to_string());
+
+                            file_list.push(FileInfo::new(
+                                key.to_string(),
+                                size,
+                                last_modified,
+                                etag,
+                            ));
+                        }
                     }
                 }
+
+                if !is_truncated {
+                    break;
+                }
+                continuation_token = next_token;
             }
 
-            if !is_truncated {
-                break;
-            }
-            continuation_token = next_token;
-        }
-
-        Ok(file_list)
+            Ok(file_list)
+        })
+        .await
     }
 
     async fn delete(&self, path: &str) -> Result<()> {
-        self.client
-            .delete_object()
-            .bucket(&self.bucket)
-            .key(path)
-            .send()
-            .await
-            .map_err(|e| {
-                StorageError::Other(format!("S3オブジェクトの削除に失敗しました: {}", e))
-            })?;
+        let path = path.to_string();
+        let bucket = self.bucket.clone();
+        let client = self.client.clone();
 
-        Ok(())
+        // Retry with exponential backoff for network errors
+        retry_with_backoff(|| async {
+            client
+                .delete_object()
+                .bucket(&bucket)
+                .key(&path)
+                .send()
+                .await
+                .map_err(|e| {
+                    let error_msg = format!("S3オブジェクトの削除に失敗しました: {}", e);
+                    if is_network_error(&error_msg) {
+                        log::warn!("Network error during delete, will retry: {}", error_msg);
+                    }
+                    StorageError::Other(error_msg)
+                })?;
+
+            Ok(())
+        })
+        .await
     }
 
     async fn get_metadata(&self, path: &str) -> Result<FileMetadata> {
-        let response = self
-            .client
-            .head_object()
-            .bucket(&self.bucket)
-            .key(path)
-            .send()
-            .await
-            .map_err(|e| {
-                // NotFoundエラーを特別に処理
-                if e.to_string().contains("NotFound") {
-                    StorageError::NotFound(path.to_string())
-                } else {
-                    StorageError::Metadata(format!(
-                        "S3オブジェクトのメタデータ取得に失敗しました: {}",
-                        e
-                    ))
-                }
-            })?;
+        let path = path.to_string();
+        let bucket = self.bucket.clone();
+        let client = self.client.clone();
 
-        let size = response.content_length().unwrap_or(0) as u64;
-        let last_modified = response
-            .last_modified()
-            .and_then(|dt| {
-                // AWS DateTimeをUNIXタイムスタンプ経由で変換
-                let secs = dt.secs();
-                let nanos = dt.subsec_nanos();
-                chrono::DateTime::from_timestamp(secs, nanos)
-            })
-            .unwrap_or_else(Utc::now);
-        let content_type = response.content_type().map(|s| s.to_string());
-        // AWS S3 ETag is surrounded by quotes, remove them to match local MD5 hash format
-        let etag = response.e_tag().map(|s| s.trim_matches('"').to_string());
+        // Retry with exponential backoff for network errors
+        retry_with_backoff(|| async {
+            let response = client
+                .head_object()
+                .bucket(&bucket)
+                .key(&path)
+                .send()
+                .await
+                .map_err(|e| {
+                    let error_msg = e.to_string();
+                    // NotFoundエラーを特別に処理（リトライしない）
+                    if error_msg.contains("NotFound") {
+                        StorageError::NotFound(path.clone())
+                    } else {
+                        let metadata_error = format!(
+                            "S3オブジェクトのメタデータ取得に失敗しました: {}",
+                            error_msg
+                        );
+                        if is_network_error(&metadata_error) {
+                            log::warn!(
+                                "Network error during get_metadata, will retry: {}",
+                                metadata_error
+                            );
+                        }
+                        StorageError::Metadata(metadata_error)
+                    }
+                })?;
 
-        Ok(FileMetadata::new(size, last_modified, content_type, etag))
+            let size = response.content_length().unwrap_or(0) as u64;
+            let last_modified = response
+                .last_modified()
+                .and_then(|dt| {
+                    // AWS DateTimeをUNIXタイムスタンプ経由で変換
+                    let secs = dt.secs();
+                    let nanos = dt.subsec_nanos();
+                    chrono::DateTime::from_timestamp(secs, nanos)
+                })
+                .unwrap_or_else(Utc::now);
+            let content_type = response.content_type().map(|s| s.to_string());
+            // AWS S3 ETag is surrounded by quotes, remove them to match local MD5 hash format
+            let etag = response.e_tag().map(|s| s.trim_matches('"').to_string());
+
+            Ok(FileMetadata::new(size, last_modified, content_type, etag))
+        })
+        .await
     }
 }
 
