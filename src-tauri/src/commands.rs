@@ -1388,17 +1388,58 @@ mod tests {
         assert!(should_skip_file(".hidden"));
         assert!(should_skip_file(".git"));
         assert!(should_skip_file(".DS_Store"));
+        assert!(should_skip_file(".gitignore"));
+        assert!(should_skip_file(".vscode"));
 
-        // System files
+        // System files (exact matches)
         assert!(should_skip_file("Thumbs.db"));
+
+        // Temporary files (*.tmp)
         assert!(should_skip_file("file.tmp"));
+        assert!(should_skip_file("document.tmp"));
+        assert!(should_skip_file("cache.tmp"));
+
+        // Vim swap files (*.swp)
         assert!(should_skip_file("file.swp"));
+        assert!(should_skip_file(".file.swp"));
+        assert!(should_skip_file("document.swp"));
+
+        // Backup files (*~)
         assert!(should_skip_file("file~"));
+        assert!(should_skip_file("document.txt~"));
+        assert!(should_skip_file("README.md~"));
 
         // Normal files should not be skipped
         assert!(!should_skip_file("normal.txt"));
         assert!(!should_skip_file("document.pdf"));
         assert!(!should_skip_file("README.md"));
+        assert!(!should_skip_file("temp.txt")); // "temp" is not ".tmp"
+        assert!(!should_skip_file("tmpfile.txt")); // "tmp" prefix is OK
+        assert!(!should_skip_file("swap.txt")); // "swap" is not ".swp"
+        assert!(!should_skip_file("file.tmpx")); // Different extension
+        assert!(!should_skip_file("Thumbs.db.txt")); // Not exact match
+    }
+
+    #[test]
+    fn test_should_skip_file_edge_cases() {
+        // Edge cases for exclusion patterns
+
+        // Files that start with excluded names but have extensions
+        assert!(!should_skip_file("Thumbs.db.bak"));
+        assert!(should_skip_file(".DS_Store")); // Still skipped (hidden)
+
+        // Empty string (should not skip)
+        assert!(!should_skip_file(""));
+
+        // Files with multiple dots
+        assert!(should_skip_file("file.backup.tmp"));
+        assert!(should_skip_file("file.backup.swp"));
+        assert!(!should_skip_file("file.tmp.txt"));
+
+        // Case sensitivity (exclusion patterns are case-sensitive)
+        assert!(!should_skip_file("FILE.TMP")); // Uppercase not skipped
+        assert!(!should_skip_file("THUMBS.DB")); // Uppercase not skipped
+        assert!(should_skip_file("file.tmp")); // Lowercase skipped
     }
 
     #[test]
@@ -1521,6 +1562,118 @@ mod tests {
         // Should only find the normal file
         assert_eq!(files.len(), 1);
         assert_eq!(files[0].path, "normal.txt");
+    }
+
+    #[test]
+    fn test_list_local_files_skips_excluded_patterns() {
+        use std::fs;
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+
+        // Create normal files
+        fs::write(temp_dir.path().join("normal.txt"), b"content").unwrap();
+        fs::write(temp_dir.path().join("document.pdf"), b"pdf").unwrap();
+
+        // Create files that should be excluded (Phase 4.2)
+        fs::write(temp_dir.path().join("cache.tmp"), b"tmp").unwrap();
+        fs::write(temp_dir.path().join("file.swp"), b"swp").unwrap();
+        fs::write(temp_dir.path().join("backup~"), b"backup").unwrap();
+        fs::write(temp_dir.path().join("Thumbs.db"), b"thumbs").unwrap();
+
+        let result = list_local_files(temp_dir.path());
+        assert!(result.is_ok());
+
+        let files = result.unwrap();
+        // Should only find the normal files
+        assert_eq!(files.len(), 2);
+
+        let paths: Vec<String> = files.iter().map(|f| f.path.clone()).collect();
+        assert!(paths.contains(&"normal.txt".to_string()));
+        assert!(paths.contains(&"document.pdf".to_string()));
+        // Excluded files should not be in the list
+        assert!(!paths.iter().any(|p| p.contains("tmp")));
+        assert!(!paths.iter().any(|p| p.contains("swp")));
+        assert!(!paths.iter().any(|p| p.contains("~")));
+        assert!(!paths.iter().any(|p| p.contains("Thumbs")));
+    }
+
+    #[test]
+    #[cfg(unix)] // Symbolic links work differently on Windows
+    fn test_list_local_files_skips_symbolic_links() {
+        use std::fs;
+        use std::os::unix::fs::symlink;
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+
+        // Create a normal file
+        fs::write(temp_dir.path().join("normal.txt"), b"content").unwrap();
+
+        // Create a target file outside the temp directory
+        let target_dir = TempDir::new().unwrap();
+        let target_file = target_dir.path().join("target.txt");
+        fs::write(&target_file, b"target content").unwrap();
+
+        // Create a symbolic link to the target file
+        let link_path = temp_dir.path().join("link_to_target.txt");
+        symlink(&target_file, &link_path).unwrap();
+
+        // Verify the symbolic link was created
+        assert!(link_path.exists());
+        assert!(link_path.is_symlink());
+
+        // List files (should skip the symbolic link)
+        let result = list_local_files(temp_dir.path());
+        assert!(result.is_ok());
+
+        let files = result.unwrap();
+        // Should only find the normal file, not the symbolic link
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].path, "normal.txt");
+
+        // Verify the symbolic link was not included
+        let paths: Vec<String> = files.iter().map(|f| f.path.clone()).collect();
+        assert!(!paths.contains(&"link_to_target.txt".to_string()));
+    }
+
+    #[test]
+    #[cfg(unix)] // Symbolic links work differently on Windows
+    fn test_list_local_files_skips_symbolic_link_directories() {
+        use std::fs;
+        use std::os::unix::fs::symlink;
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+
+        // Create a normal file
+        fs::write(temp_dir.path().join("normal.txt"), b"content").unwrap();
+
+        // Create a target directory with a file
+        let target_dir = TempDir::new().unwrap();
+        fs::write(target_dir.path().join("target_file.txt"), b"target").unwrap();
+
+        // Create a symbolic link to the target directory
+        let link_path = temp_dir.path().join("link_to_dir");
+        symlink(target_dir.path(), &link_path).unwrap();
+
+        // Verify the symbolic link to directory was created
+        assert!(link_path.exists());
+        assert!(link_path.is_symlink());
+
+        // List files (should skip the symbolic link to directory)
+        let result = list_local_files(temp_dir.path());
+        assert!(result.is_ok());
+
+        let files = result.unwrap();
+        // Should only find the normal file, not files in the linked directory
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].path, "normal.txt");
+
+        // Verify no files from the linked directory were included
+        let paths: Vec<String> = files.iter().map(|f| f.path.clone()).collect();
+        assert!(!paths.iter().any(|p| p.contains("target_file")));
+        assert!(!paths.iter().any(|p| p.contains("link_to_dir")));
     }
 
     #[test]
