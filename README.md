@@ -1,16 +1,36 @@
 # file-funeral
 
-クラウドファイル同期デスクトップアプリケーション
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Rust](https://img.shields.io/badge/rust-1.92.0%2B-orange.svg)](https://www.rust-lang.org)
+[![Tauri](https://img.shields.io/badge/tauri-2.9.5-24C8DB.svg)](https://tauri.app)
+[![React](https://img.shields.io/badge/react-19.2.3-61DAFB.svg)](https://reactjs.org)
 
-ローカルファイルをクラウドストレージ（AWS S3、GCS、S3互換）にバックアップ・同期するデスクトップアプリです。複数PC間での双方向ファイル同期を主な用途としています。
+**クラウドファイル同期デスクトップアプリケーション**
 
-## 主要機能
+file-funeralは、ローカルファイルをAWS S3にバックアップ・同期するための、高速で安全なデスクトップアプリケーションです。複数PC間での双方向ファイル同期を主な用途とし、Dropboxのようなシンプルな操作性を提供します。
 
-- ✅ ローカルファイルのクラウドへのアップロード/バックアップ
-- ✅ クラウドからローカルへのダウンロード
-- ✅ ローカルとクラウド間の双方向同期
-- ✅ 同期状態の視覚的表示
-- ✅ 競合解決（両方保存方式）
+## ✨ 主要機能
+
+- ✅ **双方向同期**: ローカルとクラウド間でファイルを自動的に同期
+- ✅ **AWS S3対応**: AWS S3をバックエンドストレージとして使用
+- ✅ **競合解決**: ファイルの競合を自動検出し、両方のバージョンを保存
+- ✅ **削除同期**: ファイル削除を両方向で同期（同期履歴に基づく検出）
+- ✅ **安全な認証**: macOSキーチェーンを使用した認証情報の暗号化保存
+- ✅ **視覚的な同期状態**: ファイルごとの同期状態を一目で確認
+- ✅ **自動同期**: アプリ起動時・終了時の自動同期（設定可能）
+- ✅ **同期履歴**: SQLiteデータベースによる同期操作の履歴管理
+- ✅ **エラー処理**: ネットワークエラーの自動リトライと詳細なエラーログ
+
+## 📸 スクリーンショット
+
+_（実装後にスクリーンショットを追加予定）_
+
+## 🎯 ユースケース
+
+- 複数のMac間でのファイル共有
+- ローカルファイルのクラウドバックアップ
+- チーム内でのファイル同期（S3バケットを共有）
+- 開発プロジェクトの同期（dotfilesなど）
 
 ## 技術スタック
 
@@ -273,13 +293,32 @@ file-funeral/
 └── TODO.md                # 実装タスク一覧
 ```
 
-## ドキュメント
+## 📚 ドキュメント
 
+### ユーザー向け
+- [SETUP_GUIDE.md](./SETUP_GUIDE.md) - 詳細なセットアップガイド
+- [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) - トラブルシューティングガイド
+
+### 開発者向け
 - [REQUIREMENTS.md](./REQUIREMENTS.md) - 詳細な要件定義
+- [ARCHITECTURE.md](./ARCHITECTURE.md) - システムアーキテクチャ
+- [API_REFERENCE.md](./API_REFERENCE.md) - Tauri Commands APIリファレンス
+- [CONTRIBUTING.md](./CONTRIBUTING.md) - コントリビューションガイド
 - [CLAUDE.md](./CLAUDE.md) - 開発ガイド（Claude Code用）
 - [TODO.md](./TODO.md) - 実装タスク一覧
+- [CHANGELOG.md](./CHANGELOG.md) - 変更履歴
 
-## ライセンス
+## 🤝 コントリビューション
+
+コントリビューションを歓迎します！詳細は[CONTRIBUTING.md](./CONTRIBUTING.md)をご覧ください。
+
+## 📝 ライセンス
 
 このプロジェクトは[LICENSE](./LICENSE)の下でライセンスされています。
+
+## 🙏 謝辞
+
+- [Tauri](https://tauri.app/) - クロスプラットフォームデスクトップアプリフレームワーク
+- [AWS SDK for Rust](https://github.com/awslabs/aws-sdk-rust) - AWS S3統合
+- [React](https://reactjs.org/) - UIフレームワーク
 

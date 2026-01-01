@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "file-funeral",
-  "version": "0.1.0",
-  "identifier": "com.tauri.dev",
+  "version": "1.0.0",
+  "identifier": "com.ohr486.file-funeral",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:1420",
@@ -34,6 +34,20 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "publisher": "ohr486",
+    "category": "Utility",
+    "shortDescription": "Cloud file synchronization desktop application",
+    "longDescription": "file-funeral is a fast and secure desktop application for backing up and synchronizing local files with AWS S3. Designed for bidirectional file synchronization across multiple PCs with Dropbox-like simplicity.",
+    "copyright": "Copyright (c) 2026 ohr486",
+    "licenseFile": "../LICENSE",
+    "macOS": {
+      "minimumSystemVersion": "11.0",
+      "entitlements": null,
+      "exceptionDomain": "",
+      "frameworks": [],
+      "providerShortName": null,
+      "signingIdentity": null
+    }
   }
 }
